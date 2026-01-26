@@ -53,10 +53,13 @@ struct ContentView: View {
 
             GroupBox("控制") {
                 VStack(alignment: .leading, spacing: 10) {
-                    Toggle("电量锁定", isOn: Binding(
-                        get: { viewModel.isLimitControlEnabled },
-                        set: { viewModel.updateLimitControlEnabled($0) }
-                    ))
+                    Toggle(
+                        "电量锁定",
+                        isOn: Binding(
+                            get: { viewModel.isLimitControlEnabled },
+                            set: { viewModel.updateLimitControlEnabled($0) }
+                        )
+                    )
                     .toggleStyle(.switch)
 
                     VStack(alignment: .leading, spacing: 6) {
@@ -72,7 +75,9 @@ struct ContentView: View {
                                 get: { Double(viewModel.chargeLimit) },
                                 set: { viewModel.updateChargeLimit(Int($0.rounded())) }
                             ),
-                            in: Double(BatteryConstants.minChargeLimit)...Double(BatteryConstants.maxChargeLimit),
+                            in: Double(
+                                BatteryConstants.minChargeLimit)...Double(
+                                    BatteryConstants.maxChargeLimit),
                             step: 1
                         )
                         .disabled(!viewModel.isLimitControlEnabled)
@@ -92,14 +97,17 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity)
             }
 
-            if !viewModel.isControlSupported {
-                Text("提示：当前设备未启用 SMC 写入，设置仅保存到本地，不会影响充电行为。")
+            VStack(alignment: .leading, spacing: 6) {
+                Text("提示：\(viewModel.smcStatus.message)")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-            } else {
-                Text("提示：开启后会在达到上限时暂停充电，可随时恢复系统默认。")
+
+                if viewModel.smcStatus.needsPrivilege {
+                    Button("授权写入") {
+                        viewModel.requestSmcWriteAccess()
+                    }
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                }
             }
         }
         .padding()
@@ -107,10 +115,13 @@ struct ContentView: View {
         .onAppear {
             viewModel.start()
         }
-        .alert("操作失败", isPresented: Binding(
-            get: { viewModel.errorMessage != nil },
-            set: { if !$0 { viewModel.clearError() } }
-        )) {
+        .alert(
+            "操作失败",
+            isPresented: Binding(
+                get: { viewModel.errorMessage != nil },
+                set: { if !$0 { viewModel.clearError() } }
+            )
+        ) {
             Button("好的") {
                 viewModel.clearError()
             }
@@ -131,9 +142,11 @@ struct ContentView: View {
     }
 }
 
-private extension View {
+extension View {
     @ViewBuilder
-    func `if`<Content: View>(_ condition: Bool, transform: (Self) -> Content) -> some View {
+    fileprivate func `if`<Content: View>(_ condition: Bool, transform: (Self) -> Content)
+        -> some View
+    {
         if condition {
             transform(self)
         } else {

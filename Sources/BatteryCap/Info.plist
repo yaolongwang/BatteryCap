@@ -27,5 +27,10 @@
 	<!-- 隐藏 Dock 图标，作为纯菜单栏应用 -->
 	<key>LSUIElement</key>
 	<true/>
+	<key>SMPrivilegedExecutables</key>
+	<dict>
+		<key>com.batterycap.helper</key>
+		<string>identifier &quot;com.batterycap.helper&quot; and anchor apple generic</string>
+	</dict>
 </dict>
 </plist>

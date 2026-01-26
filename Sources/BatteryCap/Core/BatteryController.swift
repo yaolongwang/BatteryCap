@@ -31,10 +31,12 @@ protocol BatteryControllerProtocol: Sendable {
 struct SMCBatteryController: BatteryControllerProtocol, Sendable {
     private let configuration: SMCConfiguration
     let isSupported: Bool
+    private let helperClient: SMCHelperClient
 
     init(configuration: SMCConfiguration = .load()) {
         self.configuration = configuration
-        self.isSupported = configuration.isWritable
+        self.isSupported = configuration.status.isEnabled
+        self.helperClient = SMCHelperClient()
     }
 
     func applyChargingMode(_ mode: ChargingMode) async throws {
@@ -43,7 +45,14 @@ struct SMCBatteryController: BatteryControllerProtocol, Sendable {
         }
 
         let limit = clampLimit(for: mode)
-        try applyChargeLimit(limit)
+        switch configuration.status {
+        case .enabledDirect:
+            try applyChargeLimit(limit)
+        case .enabledHelper:
+            try await helperClient.setChargeLimit(limit)
+        case .disabled:
+            throw BatteryError.permissionDenied
+        }
     }
 
     private func applyChargeLimit(_ limit: Int) throws {

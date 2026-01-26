@@ -4,20 +4,44 @@ import Foundation
 struct SMCConfiguration: Sendable {
     let chargeLimitKey: SMCKeyDefinition?
     let allowWrites: Bool
-    let isWritable: Bool
+    let status: SMCWriteStatus
+
+    var isWritable: Bool {
+        status == .enabledDirect
+    }
 
     static func load(userDefaults: UserDefaults = .standard) -> SMCConfiguration {
         let allowWrites = userDefaults.object(forKey: SettingsKeys.allowSmcWrites) as? Bool ?? true
         let keyDefinition = SMCKeys.batteryChargeLimit
-        let isWritable = allowWrites && canWrite(keyDefinition)
-        return SMCConfiguration(chargeLimitKey: keyDefinition, allowWrites: allowWrites, isWritable: isWritable)
+        let status = resolveStatus(allowWrites: allowWrites, keyDefinition: keyDefinition)
+        return SMCConfiguration(
+            chargeLimitKey: keyDefinition, allowWrites: allowWrites, status: status)
     }
 
-    private static func canWrite(_ keyDefinition: SMCKeyDefinition?) -> Bool {
-        guard let keyDefinition else {
-            return false
+    private static func resolveStatus(allowWrites: Bool, keyDefinition: SMCKeyDefinition?)
+        -> SMCWriteStatus
+    {
+        guard allowWrites else {
+            return .disabled("SMC 写入已关闭")
         }
-        return SMCClient.canWrite(keyDefinition)
+        guard let keyDefinition else {
+            return .disabled("未找到可写的 SMC 键")
+        }
+
+        switch SMCClient.checkWriteAccess(keyDefinition) {
+        case .supported:
+            return .enabledDirect
+        case .permissionDenied:
+            return SMCHelperClient.isInstalled ? .enabledHelper : .disabled("需要管理员授权写入")
+        case .keyNotFound:
+            return .disabled("SMC 键不存在或不可写")
+        case .typeMismatch:
+            return .disabled("SMC 键类型不匹配")
+        case .smcUnavailable:
+            return .disabled("无法连接到 SMC")
+        case .unknown:
+            return .disabled("SMC 写入不可用")
+        }
     }
 }
 

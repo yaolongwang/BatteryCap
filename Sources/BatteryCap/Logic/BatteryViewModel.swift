@@ -10,14 +10,18 @@ final class BatteryViewModel: ObservableObject {
     @Published var isLimitControlEnabled: Bool
     @Published var chargeLimit: Int
     @Published var errorMessage: String?
+    @Published private(set) var smcStatus: SMCWriteStatus
 
-    let isControlSupported: Bool
+    var isControlSupported: Bool {
+        smcStatus.isEnabled
+    }
 
     nonisolated private let infoProvider: BatteryInfoProviderProtocol
     nonisolated private let controller: BatteryControllerProtocol
     private let settingsStore: BatterySettingsStoreProtocol
     private let policy: BatteryPolicy
     private let monitor: BatteryPowerMonitor
+    private let privilegeManager: SMCPrivilegeManager
     private var lastAppliedMode: ChargingMode?
 
     init(
@@ -25,18 +29,20 @@ final class BatteryViewModel: ObservableObject {
         controller: BatteryControllerProtocol = SMCBatteryController(),
         settingsStore: BatterySettingsStoreProtocol = UserDefaultsBatterySettingsStore(),
         policy: BatteryPolicy = BatteryPolicy(),
-        monitor: BatteryPowerMonitor = BatteryPowerMonitor()
+        monitor: BatteryPowerMonitor = BatteryPowerMonitor(),
+        privilegeManager: SMCPrivilegeManager = SMCPrivilegeManager()
     ) {
         self.infoProvider = infoProvider
         self.controller = controller
         self.settingsStore = settingsStore
         self.policy = policy
         self.monitor = monitor
+        self.privilegeManager = privilegeManager
 
         let settings = settingsStore.load()
         self.isLimitControlEnabled = settings.isLimitControlEnabled
         self.chargeLimit = settings.chargeLimit
-        self.isControlSupported = controller.isSupported
+        self.smcStatus = SMCConfiguration.load().status
 
         self.monitor.onPowerSourceChange = { [weak self] in
             self?.refreshNow()
@@ -61,12 +67,14 @@ final class BatteryViewModel: ObservableObject {
     func updateLimitControlEnabled(_ enabled: Bool) {
         isLimitControlEnabled = enabled
         persistSettings()
+        refreshSmcStatus()
         applyControlIfNeeded(force: true)
     }
 
     func updateChargeLimit(_ newValue: Int) {
         chargeLimit = clampLimit(newValue)
         persistSettings()
+        refreshSmcStatus()
         applyControlIfNeeded(force: false)
     }
 
@@ -74,7 +82,19 @@ final class BatteryViewModel: ObservableObject {
         isLimitControlEnabled = false
         chargeLimit = BatteryConstants.maxChargeLimit
         persistSettings()
+        refreshSmcStatus()
         applyModeIfNeeded(.normal, force: true)
+    }
+
+    func requestSmcWriteAccess() {
+        Task { [weak self] in
+            do {
+                try self?.privilegeManager.installHelper()
+                self?.refreshSmcStatus()
+            } catch {
+                self?.handle(error)
+            }
+        }
     }
 
     func clearError() {
@@ -91,6 +111,7 @@ final class BatteryViewModel: ObservableObject {
             let info = try await infoProvider.fetchBatteryInfo()
             batteryInfo = info
             lastUpdated = Date()
+            refreshSmcStatus()
             applyControlIfNeeded(force: false)
         } catch {
             handle(error)
@@ -119,7 +140,8 @@ final class BatteryViewModel: ObservableObject {
             return
         }
 
-        let desiredMode = policy.desiredMode(currentCharge: info.chargePercentage, settings: currentSettings)
+        let desiredMode = policy.desiredMode(
+            currentCharge: info.chargePercentage, settings: currentSettings)
         applyModeIfNeeded(desiredMode, force: force)
     }
 
@@ -137,6 +159,10 @@ final class BatteryViewModel: ObservableObject {
                 self?.handle(error)
             }
         }
+    }
+
+    private func refreshSmcStatus() {
+        smcStatus = SMCConfiguration.load().status
     }
 
     private var currentSettings: BatterySettings {

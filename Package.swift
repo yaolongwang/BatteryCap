@@ -27,6 +27,10 @@ let package = Package(
                 ])
             ]
         ),
+        .executableTarget(
+            name: "BatteryCapHelper",
+            path: "Sources/BatteryCapHelper"
+        ),
         .testTarget(
             name: "BatteryCapTests",
             dependencies: ["BatteryCap"],

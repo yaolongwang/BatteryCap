@@ -38,12 +38,29 @@ final class SMCClient {
     }
 
     static func canWrite(_ keyDefinition: SMCKeyDefinition) -> Bool {
+        checkWriteAccess(keyDefinition) == .supported
+    }
+
+    static func checkWriteAccess(_ keyDefinition: SMCKeyDefinition) -> SMCWriteCheckResult {
         do {
             let client = try SMCClient()
             try client.validate(keyDefinition)
-            return true
+            return .supported
+        } catch let error as BatteryError {
+            switch error {
+            case .permissionDenied:
+                return .permissionDenied
+            case .smcKeyNotFound:
+                return .keyNotFound
+            case .smcTypeMismatch:
+                return .typeMismatch
+            case .smcUnavailable:
+                return .smcUnavailable
+            default:
+                return .unknown
+            }
         } catch {
-            return false
+            return .unknown
         }
     }
 
