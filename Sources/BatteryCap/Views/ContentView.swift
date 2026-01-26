@@ -40,55 +40,64 @@ struct ContentView: View {
             Text("BatteryCap")
                 .font(.headline)
 
-            Divider()
-
-            VStack(alignment: .leading, spacing: 8) {
-                statusRow(title: "电量", value: chargeText, useMonospacedDigits: true)
-                statusRow(title: "供电", value: powerSourceText, useMonospacedDigits: false)
-                statusRow(title: "状态", value: chargeStateText, useMonospacedDigits: false)
-                statusRow(title: "循环次数", value: cycleText, useMonospacedDigits: true)
-                statusRow(title: "更新时间", value: lastUpdatedText, useMonospacedDigits: true)
+            GroupBox("状态") {
+                VStack(alignment: .leading, spacing: 8) {
+                    statusRow(title: "电量", value: chargeText, useMonospacedDigits: true)
+                    statusRow(title: "供电", value: powerSourceText, useMonospacedDigits: false)
+                    statusRow(title: "状态", value: chargeStateText, useMonospacedDigits: false)
+                    statusRow(title: "循环次数", value: cycleText, useMonospacedDigits: true)
+                    statusRow(title: "更新时间", value: lastUpdatedText, useMonospacedDigits: true)
+                }
+                .frame(maxWidth: .infinity)
             }
 
-            Divider()
+            GroupBox("控制") {
+                VStack(alignment: .leading, spacing: 10) {
+                    Toggle("电量锁定", isOn: Binding(
+                        get: { viewModel.isLimitControlEnabled },
+                        set: { viewModel.updateLimitControlEnabled($0) }
+                    ))
+                    .toggleStyle(.switch)
 
-            VStack(alignment: .leading, spacing: 10) {
-                Toggle("供电旁路", isOn: Binding(
-                    get: { viewModel.isLimitControlEnabled },
-                    set: { viewModel.updateLimitControlEnabled($0) }
-                ))
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text("最高电量")
+                            Spacer()
+                            Text("\(viewModel.chargeLimit)%")
+                                .monospacedDigit()
+                        }
 
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text("充电上限")
-                        Spacer()
-                        Text("\(viewModel.chargeLimit)%")
-                            .monospacedDigit()
+                        Slider(
+                            value: Binding(
+                                get: { Double(viewModel.chargeLimit) },
+                                set: { viewModel.updateChargeLimit(Int($0.rounded())) }
+                            ),
+                            in: Double(BatteryConstants.minChargeLimit)...Double(BatteryConstants.maxChargeLimit),
+                            step: 1
+                        )
+                        .disabled(!viewModel.isLimitControlEnabled)
                     }
 
-                    Slider(
-                        value: Binding(
-                            get: { Double(viewModel.chargeLimit) },
-                            set: { viewModel.updateChargeLimit(Int($0.rounded())) }
-                        ),
-                        in: Double(BatteryConstants.minChargeLimit)...Double(BatteryConstants.maxChargeLimit),
-                        step: 1
-                    )
-                    .disabled(!viewModel.isLimitControlEnabled)
-                }
+                    HStack {
+                        Button("立即刷新") {
+                            viewModel.refreshNow()
+                        }
+                        .disabled(viewModel.isRefreshing)
 
-                Button("立即刷新") {
-                    viewModel.refreshNow()
+                        Button("恢复系统默认") {
+                            viewModel.restoreSystemDefault()
+                        }
+                    }
                 }
-                .disabled(viewModel.isRefreshing)
+                .frame(maxWidth: .infinity)
             }
 
             if !viewModel.isControlSupported {
-                Text("提示：当前版本未启用 SMC 写入，设置仅保存到本地，不会影响充电行为。")
+                Text("提示：当前设备未启用 SMC 写入，设置仅保存到本地，不会影响充电行为。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             } else {
-                Text("启用后，电量达到上限将自动进入旁路模式。")
+                Text("提示：开启后会在达到上限时暂停充电，可随时恢复系统默认。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

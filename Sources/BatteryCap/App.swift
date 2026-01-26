@@ -10,5 +10,6 @@ struct BatteryCapApp: App {
         MenuBarExtra("BatteryCap", systemImage: "battery.100") {
             ContentView(viewModel: viewModel)
         }
+        .menuBarExtraStyle(.window)
     }
 }

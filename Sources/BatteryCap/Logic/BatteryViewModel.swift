@@ -17,45 +17,39 @@ final class BatteryViewModel: ObservableObject {
     nonisolated private let controller: BatteryControllerProtocol
     private let settingsStore: BatterySettingsStoreProtocol
     private let policy: BatteryPolicy
-    private var refreshTask: Task<Void, Never>?
+    private let monitor: BatteryPowerMonitor
     private var lastAppliedMode: ChargingMode?
 
     init(
         infoProvider: BatteryInfoProviderProtocol = IOKitBatteryInfoProvider(),
         controller: BatteryControllerProtocol = SMCBatteryController(),
         settingsStore: BatterySettingsStoreProtocol = UserDefaultsBatterySettingsStore(),
-        policy: BatteryPolicy = BatteryPolicy()
+        policy: BatteryPolicy = BatteryPolicy(),
+        monitor: BatteryPowerMonitor = BatteryPowerMonitor()
     ) {
         self.infoProvider = infoProvider
         self.controller = controller
         self.settingsStore = settingsStore
         self.policy = policy
+        self.monitor = monitor
 
         let settings = settingsStore.load()
         self.isLimitControlEnabled = settings.isLimitControlEnabled
         self.chargeLimit = settings.chargeLimit
         self.isControlSupported = controller.isSupported
+
+        self.monitor.onPowerSourceChange = { [weak self] in
+            self?.refreshNow()
+        }
     }
 
     deinit {
-        refreshTask?.cancel()
+        monitor.stop()
     }
 
     func start() {
-        guard refreshTask == nil else {
-            return
-        }
-
-        refreshTask = Task { [weak self] in
-            guard let self else {
-                return
-            }
-
-            while !Task.isCancelled {
-                await self.refresh()
-                try? await Task.sleep(nanoseconds: BatteryConstants.refreshIntervalNanoseconds)
-            }
-        }
+        monitor.start()
+        refreshNow()
     }
 
     func refreshNow() {
@@ -74,6 +68,13 @@ final class BatteryViewModel: ObservableObject {
         chargeLimit = clampLimit(newValue)
         persistSettings()
         applyControlIfNeeded(force: false)
+    }
+
+    func restoreSystemDefault() {
+        isLimitControlEnabled = false
+        chargeLimit = BatteryConstants.maxChargeLimit
+        persistSettings()
+        applyModeIfNeeded(.normal, force: true)
     }
 
     func clearError() {
@@ -118,8 +119,7 @@ final class BatteryViewModel: ObservableObject {
             return
         }
 
-        let desiredMode = policy.desiredMode(
-            currentCharge: info.chargePercentage, settings: currentSettings)
+        let desiredMode = policy.desiredMode(currentCharge: info.chargePercentage, settings: currentSettings)
         applyModeIfNeeded(desiredMode, force: force)
     }
 

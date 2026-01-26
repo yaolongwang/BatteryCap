@@ -8,9 +8,9 @@ struct BatteryPolicy {
         }
 
         if currentCharge >= settings.chargeLimit {
-            return .bypass
+            return .hold(currentCharge)
         }
 
-        return .normal
+        return .chargeLimit(settings.chargeLimit)
     }
 }

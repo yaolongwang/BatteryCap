@@ -3,7 +3,19 @@ import Foundation
 /// 充电控制模式
 enum ChargingMode: Equatable {
     case normal
-    case bypass
+    case chargeLimit(Int)
+    case hold(Int)
+
+    var targetLimit: Int {
+        switch self {
+        case .normal:
+            return BatteryConstants.maxChargeLimit
+        case .chargeLimit(let limit):
+            return limit
+        case .hold(let level):
+            return level
+        }
+    }
 }
 
 /// 电池控制器协议
@@ -15,14 +27,44 @@ protocol BatteryControllerProtocol: Sendable {
     func applyChargingMode(_ mode: ChargingMode) async throws
 }
 
-/// SMC 控制器占位实现
-/// 注意：此实现暂不写入 SMC，避免硬件风险
+/// SMC 控制器实现
 struct SMCBatteryController: BatteryControllerProtocol, Sendable {
-    var isSupported: Bool {
-        false
+    private let configuration: SMCConfiguration
+    let isSupported: Bool
+
+    init(configuration: SMCConfiguration = .load()) {
+        self.configuration = configuration
+        self.isSupported = configuration.isWritable
     }
 
     func applyChargingMode(_ mode: ChargingMode) async throws {
-        throw BatteryError.unsupportedOperation
+        guard isSupported else {
+            throw BatteryError.unsupportedOperation
+        }
+
+        let limit = clampLimit(for: mode)
+        try applyChargeLimit(limit)
+    }
+
+    private func applyChargeLimit(_ limit: Int) throws {
+        guard let keyDefinition = configuration.chargeLimitKey else {
+            throw BatteryError.unsupportedOperation
+        }
+
+        let value = UInt8(limit)
+        let client = try SMCClient()
+        try client.writeUInt8(value, to: keyDefinition)
+    }
+
+    private func clampLimit(for mode: ChargingMode) -> Int {
+        let minValue: Int
+        switch mode {
+        case .hold:
+            minValue = 1
+        case .normal, .chargeLimit:
+            minValue = BatteryConstants.minChargeLimit
+        }
+
+        return min(max(mode.targetLimit, minValue), BatteryConstants.maxChargeLimit)
     }
 }
