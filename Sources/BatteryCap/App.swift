@@ -4,9 +4,11 @@ import SwiftUI
 /// 使用 MenuBarExtra 作为主场景，提供菜单栏常驻体验
 @main
 struct BatteryCapApp: App {
+    @StateObject private var viewModel = BatteryViewModel()
+
     var body: some Scene {
         MenuBarExtra("BatteryCap", systemImage: "battery.100") {
-            ContentView()
+            ContentView(viewModel: viewModel)
         }
     }
 }

@@ -4,13 +4,13 @@ import PackageDescription
 let package = Package(
     name: "BatteryCap",
     platforms: [
-        .macOS(.v26) // 确保目标系统为 macOS 26+
+        .macOS(.v26)  // 确保目标系统为 macOS 26+
     ],
     products: [
         .executable(
             name: "BatteryCap",
             targets: ["BatteryCap"]
-        ),
+        )
     ],
     targets: [
         .executableTarget(
@@ -21,8 +21,16 @@ let package = Package(
                 .process("Resources")
             ],
             swiftSettings: [
-                .unsafeFlags(["-Xlinker", "-sectcreate", "-Xlinker", "__TEXT", "-Xlinker", "__info_plist", "-Xlinker", "Sources/BatteryCap/Info.plist"]),
+                .unsafeFlags([
+                    "-Xlinker", "-sectcreate", "-Xlinker", "__TEXT", "-Xlinker", "__info_plist",
+                    "-Xlinker", "Sources/BatteryCap/Info.plist",
+                ])
             ]
+        ),
+        .testTarget(
+            name: "BatteryCapTests",
+            dependencies: ["BatteryCap"],
+            path: "Tests"
         ),
     ]
 )
