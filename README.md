@@ -5,14 +5,8 @@
 swift run
 ```
 
-## 生成可授权写入的 .app（需要签名）
+## 本地安装写入组件（不需要开发者账号）
 ```bash
-scripts/package-app.sh
+scripts/install-helper.sh
 ```
-
-如果需要签名：
-```bash
-CODESIGN_IDENTITY="你的证书名" scripts/package-app.sh
-```
-
-生成的应用位于：`dist/BatteryCap.app`
+安装过程中会弹出管理员授权，请输入密码。

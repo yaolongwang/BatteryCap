@@ -35,10 +35,7 @@ struct SMCConfiguration: Sendable {
             if SMCHelperClient.isInstalled {
                 return .enabledHelper
             }
-            if !SMCHelperLocator.isRunningFromAppBundle {
-                return .disabled("请从已签名应用运行以启用授权写入")
-            }
-            return .disabled("需要管理员授权写入")
+            return .disabled("需要管理员安装写入组件")
         case .keyNotFound:
             return .disabled("SMC 键不存在或不可写")
         case .typeMismatch:

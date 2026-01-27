@@ -1,42 +1,26 @@
 import Foundation
-import Security
-import ServiceManagement
 
 /// SMC 特权安装管理
 final class SMCPrivilegeManager {
     func installHelper() throws {
-        guard SMCHelperLocator.isRunningFromAppBundle else {
-            throw BatteryError.unknown("请从已打包的应用运行以启用授权写入。")
-        }
-        guard SMCHelperLocator.helperFilesExist else {
-            throw BatteryError.unknown("缺少特权写入组件，请重新打包应用。")
+        guard let scriptURL = SMCManualInstall.installScriptURL else {
+            throw BatteryError.unknown("未找到安装脚本，请在项目根目录运行。")
         }
 
-        var authRef: AuthorizationRef?
-        let status = AuthorizationCreate(nil, nil, [], &authRef)
-        guard status == errAuthorizationSuccess, let authRef else {
+        try runInstallScript(scriptURL)
+    }
+
+    private func runInstallScript(_ scriptURL: URL) throws {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        task.arguments = [
+            "-e",
+            "do shell script \"\\(scriptURL.path)\" with administrator privileges",
+        ]
+        try task.run()
+        task.waitUntilExit()
+        if task.terminationStatus != 0 {
             throw BatteryError.permissionDenied
         }
-        defer {
-            AuthorizationFree(authRef, [])
-        }
-
-        var error: Unmanaged<CFError>?
-        let blessed = SMJobBless(
-            kSMDomainSystemLaunchd,
-            SMCHelperClient.machServiceName as CFString,
-            authRef,
-            &error
-        )
-
-        if blessed {
-            return
-        }
-
-        if let error = error?.takeRetainedValue() {
-            throw BatteryError.unknown(error.localizedDescription)
-        }
-
-        throw BatteryError.permissionDenied
     }
 }

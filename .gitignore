@@ -2,6 +2,7 @@
 /.build
 /Packages
 /dist
+/Subpackages/**/.build
 /*.xcodeproj
 xcuserdata/
 DerivedData/

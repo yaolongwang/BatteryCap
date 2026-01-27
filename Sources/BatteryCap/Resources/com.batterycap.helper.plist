@@ -9,9 +9,9 @@
         <key>com.batterycap.helper</key>
         <true/>
     </dict>
-    <key>ProgramArguments</key>
-    <array>
-        <string>com.batterycap.helper</string>
-    </array>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Library/PrivilegedHelperTools/com.batterycap.helper</string>
+	</array>
 </dict>
 </plist>

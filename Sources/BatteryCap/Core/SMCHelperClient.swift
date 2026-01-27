@@ -1,5 +1,4 @@
 import Foundation
-import ServiceManagement
 
 @objc protocol SMCHelperProtocol {
     func setChargeLimit(_ limit: Int, reply: @escaping (Int32) -> Void)
@@ -10,7 +9,7 @@ final class SMCHelperClient: @unchecked Sendable {
     static let machServiceName = "com.batterycap.helper"
 
     static var isInstalled: Bool {
-        SMJobCopyDictionary(kSMDomainSystemLaunchd, machServiceName as CFString) != nil
+        FileManager.default.fileExists(atPath: "/Library/PrivilegedHelperTools/\(machServiceName)")
     }
 
     func setChargeLimit(_ limit: Int) async throws {
