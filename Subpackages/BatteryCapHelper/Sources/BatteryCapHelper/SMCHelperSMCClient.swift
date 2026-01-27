@@ -45,7 +45,7 @@ final class SMCHelperSMCClient {
         var openedConnection: io_connect_t = 0
         let openResult = IOServiceOpen(service, mach_task_self_, 0, &openedConnection)
         guard openResult == KERN_SUCCESS else {
-            throw SMCHelperError.permissionDenied
+            throw mapReturn(openResult)
         }
         connection = openedConnection
 
@@ -59,7 +59,7 @@ final class SMCHelperSMCClient {
         )
         guard openCallResult == KERN_SUCCESS else {
             close()
-            throw SMCHelperError.permissionDenied
+            throw mapReturn(openCallResult)
         }
     }
 
@@ -70,7 +70,8 @@ final class SMCHelperSMCClient {
         isClosed = true
 
         if connection != 0 {
-            _ = IOConnectCallStructMethod(connection, SMCHelperCommand.userClientClose, nil, 0, nil, nil)
+            _ = IOConnectCallStructMethod(
+                connection, SMCHelperCommand.userClientClose, nil, 0, nil, nil)
             IOServiceClose(connection)
             connection = 0
         }
@@ -102,9 +103,20 @@ final class SMCHelperSMCClient {
             &outputSize
         )
         guard result == KERN_SUCCESS else {
-            throw SMCHelperError.writeFailed
+            throw mapReturn(result)
         }
         return output
+    }
+
+    private func mapReturn(_ result: kern_return_t) -> SMCHelperError {
+        switch result {
+        case kIOReturnNotPrivileged, kIOReturnNotPermitted:
+            return .permissionDenied
+        case kIOReturnNoDevice:
+            return .unavailable
+        default:
+            return .writeFailed
+        }
     }
 }
 
@@ -184,11 +196,30 @@ private struct SMCHelperKeyData {
     )
 }
 
-private enum SMCHelperError: Error {
+enum SMCHelperError: Error {
     case unavailable
     case permissionDenied
     case invalidKey
     case keyNotFound
     case typeMismatch
     case writeFailed
+}
+
+extension SMCHelperError {
+    var status: SMCHelperStatus {
+        switch self {
+        case .permissionDenied:
+            return .permissionDenied
+        case .keyNotFound:
+            return .keyNotFound
+        case .typeMismatch:
+            return .typeMismatch
+        case .unavailable:
+            return .smcUnavailable
+        case .writeFailed:
+            return .writeFailed
+        case .invalidKey:
+            return .invalidKey
+        }
+    }
 }

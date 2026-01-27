@@ -34,11 +34,11 @@ enum BatteryError: Error, LocalizedError {
         case .smcKeyInvalid:
             return "SMC 键格式无效。"
         case .smcKeyNotFound:
-            return "SMC 键不存在或不可写。"
+            return "当前机型不支持该充电控制。"
         case .smcTypeMismatch:
             return "SMC 键类型不匹配。"
         case .smcWriteFailed:
-            return "写入 SMC 失败。"
+            return "系统拒绝写入 SMC，可能当前机型或系统不支持充电控制。"
         case .unknown(let message):
             return message
         }

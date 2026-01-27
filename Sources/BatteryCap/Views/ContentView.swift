@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// 主视图：显示电池状态和控制面板
@@ -96,6 +97,10 @@ struct ContentView: View {
 
                         Button("恢复系统默认") {
                             viewModel.restoreSystemDefault()
+                        }
+
+                        Button("退出") {
+                            NSApplication.shared.terminate(nil)
                         }
                     }
                 }

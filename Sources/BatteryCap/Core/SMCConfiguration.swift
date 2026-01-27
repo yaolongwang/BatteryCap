@@ -28,13 +28,15 @@ struct SMCConfiguration: Sendable {
             return .disabled("未找到可写的 SMC 键")
         }
 
-        switch SMCClient.checkWriteAccess(keyDefinition) {
-        case .supported:
+        let directResult = SMCClient.checkWriteAccess(keyDefinition)
+        if directResult == .supported {
             return .enabledDirect
+        }
+        if SMCHelperClient.isInstalled {
+            return .enabledHelper
+        }
+        switch directResult {
         case .permissionDenied:
-            if SMCHelperClient.isInstalled {
-                return .enabledHelper
-            }
             return .disabled("需要管理员安装写入组件（运行 scripts/install-helper.sh）")
         case .keyNotFound:
             return .disabled("SMC 键不存在或不可写")
@@ -42,7 +44,7 @@ struct SMCConfiguration: Sendable {
             return .disabled("SMC 键类型不匹配")
         case .smcUnavailable:
             return .disabled("无法连接到 SMC")
-        case .unknown:
+        case .unknown, .supported:
             return .disabled("SMC 写入不可用")
         }
     }
