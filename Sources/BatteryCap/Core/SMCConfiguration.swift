@@ -35,7 +35,7 @@ struct SMCConfiguration: Sendable {
             if SMCHelperClient.isInstalled {
                 return .enabledHelper
             }
-            return .disabled("需要管理员安装写入组件")
+            return .disabled("需要管理员安装写入组件（运行 scripts/install-helper.sh）")
         case .keyNotFound:
             return .disabled("SMC 键不存在或不可写")
         case .typeMismatch:

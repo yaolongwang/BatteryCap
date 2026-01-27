@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ "$(id -u)" -ne 0 ]]; then
+  exec /usr/bin/sudo "$0" "$@"
+fi
+
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 HELPER_DIR="$ROOT_DIR/Subpackages/BatteryCapHelper"
 HELPER_EXEC="$HELPER_DIR/.build/release/BatteryCapHelper"
@@ -19,6 +23,8 @@ if [[ ! -f "$HELPER_EXEC" ]]; then
   echo "Helper executable not found: $HELPER_EXEC" >&2
   exit 1
 fi
+
+mkdir -p /Library/PrivilegedHelperTools /Library/LaunchDaemons
 
 install -m 755 -o root -g wheel "$HELPER_EXEC" "$BIN_DEST"
 install -m 644 -o root -g wheel "$PLIST_SOURCE" "$PLIST_DEST"

@@ -53,14 +53,19 @@ struct ContentView: View {
 
             GroupBox("控制") {
                 VStack(alignment: .leading, spacing: 10) {
-                    Toggle(
-                        "电量锁定",
-                        isOn: Binding(
-                            get: { viewModel.isLimitControlEnabled },
-                            set: { viewModel.updateLimitControlEnabled($0) }
+                    HStack {
+                        Text("电量锁定")
+                        Spacer()
+                        Toggle(
+                            "",
+                            isOn: Binding(
+                                get: { viewModel.isLimitControlEnabled },
+                                set: { viewModel.updateLimitControlEnabled($0) }
+                            )
                         )
-                    )
-                    .toggleStyle(.switch)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                    }
 
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
