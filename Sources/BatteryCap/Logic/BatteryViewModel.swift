@@ -16,6 +16,10 @@ final class BatteryViewModel: ObservableObject {
         smcStatus.isEnabled
     }
 
+    var canRequestSmcWriteAccess: Bool {
+        smcStatus.needsPrivilege && SMCHelperLocator.isRunningFromAppBundle
+    }
+
     nonisolated private let infoProvider: BatteryInfoProviderProtocol
     nonisolated private let controller: BatteryControllerProtocol
     private let settingsStore: BatterySettingsStoreProtocol

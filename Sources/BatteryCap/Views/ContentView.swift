@@ -107,6 +107,7 @@ struct ContentView: View {
                         viewModel.requestSmcWriteAccess()
                     }
                     .font(.footnote)
+                    .disabled(!viewModel.canRequestSmcWriteAccess)
                 }
             }
         }

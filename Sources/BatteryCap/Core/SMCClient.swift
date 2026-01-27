@@ -86,7 +86,7 @@ final class SMCClient {
         var openedConnection: io_connect_t = 0
         let openResult = IOServiceOpen(service, mach_task_self_, 0, &openedConnection)
         guard openResult == KERN_SUCCESS else {
-            throw BatteryError.permissionDenied
+            throw mapReturn(openResult)
         }
 
         connection = openedConnection
@@ -102,7 +102,7 @@ final class SMCClient {
 
         guard openCallResult == KERN_SUCCESS else {
             close()
-            throw BatteryError.permissionDenied
+            throw mapReturn(openCallResult)
         }
     }
 
@@ -148,10 +148,21 @@ final class SMCClient {
         )
 
         guard result == KERN_SUCCESS else {
-            throw BatteryError.smcWriteFailed
+            throw mapReturn(result)
         }
 
         return output
+    }
+
+    private func mapReturn(_ result: kern_return_t) -> BatteryError {
+        switch result {
+        case kIOReturnNotPrivileged, kIOReturnNotPermitted:
+            return .permissionDenied
+        case kIOReturnNoDevice:
+            return .smcUnavailable
+        default:
+            return .smcWriteFailed
+        }
     }
 }
 
