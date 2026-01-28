@@ -31,15 +31,21 @@ enum BatteryCapDiagnostics {
             print("安装脚本: 未找到")
         }
 
-        guard let keyDefinition = configuration.chargeLimitKey else {
-            print("SMC Key: 未找到（无法诊断）")
+        guard let strategy = configuration.controlStrategy else {
+            print("SMC 充电控制键: 未找到（无法诊断）")
             print("BatteryCap 诊断结束")
             return
         }
 
-        let keyName = keyDefinition.key.rawValue
-        let dataType = keyDefinition.dataType?.rawValue ?? "未知"
-        print("SMC Key: \(keyName) / \(dataType) / \(keyDefinition.dataSize) 字节")
+        switch strategy {
+        case .chargeLimit(let keyDefinition):
+            let keyName = keyDefinition.key.rawValue
+            let dataType = keyDefinition.dataType?.rawValue ?? "未知"
+            print("SMC 限充键: \(keyName) / \(dataType) / \(keyDefinition.dataSize) 字节")
+        case .chargingSwitch(let chargingSwitch):
+            let keys = chargingSwitch.keyNames.joined(separator: ", ")
+            print("SMC 充电开关键: \(keys) / \(chargingSwitch.dataSize) 字节")
+        }
 
         let keyList = SMCClient.keyListReport()
         print("SMC Key 列表: 阶段=\(describe(keyList.stage))")
@@ -66,24 +72,46 @@ enum BatteryCapDiagnostics {
             }
         }
 
-        let directResult = SMCClient.checkWriteAccess(keyDefinition)
+        let directResult = SMCClient.checkWriteAccess(strategy)
         print("直接写入检测: \(describe(directResult))")
 
-        let directReport = SMCClient.diagnosticReport(
-            keyDefinition, value: UInt8(settings.chargeLimit)
-        )
-        print("直接诊断阶段: \(describe(directReport.stage))")
-        print("直接诊断结果: \(describe(directReport.result))")
-        print("直接诊断返回: \(formatKernReturn(directReport.kernReturn))")
-        print(
-            "直接诊断 KeyInfo: size=\(directReport.dataSize), type=\(formatDataType(directReport.dataType))"
-        )
-        if SMCHelperClient.isInstalled {
-            runHelperWriteTest(limit: settings.chargeLimit)
-            runHelperDiagnostic(limit: settings.chargeLimit)
-        } else {
-            print("Helper 写入检测: 跳过（未安装）")
-            print("Helper 诊断: 跳过（未安装）")
+        switch strategy {
+        case .chargeLimit(let keyDefinition):
+            let directReport = SMCClient.diagnosticReport(
+                keyDefinition, value: UInt8(settings.chargeLimit)
+            )
+            print("直接诊断阶段: \(describe(directReport.stage))")
+            print("直接诊断结果: \(describe(directReport.result))")
+            print("直接诊断返回: \(formatKernReturn(directReport.kernReturn))")
+            print(
+                "直接诊断 KeyInfo: size=\(directReport.dataSize), type=\(formatDataType(directReport.dataType))"
+            )
+            if SMCHelperClient.isInstalled {
+                runHelperWriteTest(limit: settings.chargeLimit)
+                runHelperDiagnostic(limit: settings.chargeLimit)
+            } else {
+                print("Helper 写入检测: 跳过（未安装）")
+                print("Helper 诊断: 跳过（未安装）")
+            }
+        case .chargingSwitch(let chargingSwitch):
+            print("充电开关键读取:")
+            for key in chargingSwitch.keyNames {
+                let report = SMCClient.readKeyReport(key)
+                print(
+                    "  \(key): stage=\(describe(report.stage)), return=\(formatKernReturn(report.kernReturn))"
+                )
+                print(
+                    "    size=\(report.dataSize), type=\(formatDataType(report.dataType)), value=\(formatBytes(report.bytes, dataType: report.dataType))\(report.truncated ? " (truncated)" : "")"
+                )
+            }
+            if SMCHelperClient.isInstalled {
+                runHelperCandidateReads(keys: chargingSwitch.keyNames)
+                print("Helper 写入检测: 跳过（充电开关键会改变充电状态）")
+                print("Helper 诊断: 跳过（充电开关键会改变充电状态）")
+            } else {
+                print("Helper 写入检测: 跳过（未安装）")
+                print("Helper 诊断: 跳过（未安装）")
+            }
         }
 
         print("BatteryCap 诊断结束")

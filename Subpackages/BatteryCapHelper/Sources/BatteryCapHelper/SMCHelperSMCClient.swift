@@ -15,22 +15,26 @@ final class SMCHelperSMCClient {
 
     func writeChargeLimit(_ value: UInt8) throws {
         let key = try SMCHelperSMCKey(SMCHelperConstants.chargeLimitKey)
-        let keyInfo = try getKeyInfo(for: key)
-        guard keyInfo.dataSize == 1 else {
-            throw SMCHelperError.typeMismatch
-        }
+        try writeBytes([value], to: key)
+    }
 
-        var input = SMCHelperKeyData()
-        input.key = key.code
-        input.data8 = SMCHelperCommand.writeKey
-        input.keyInfo.dataSize = UInt32(keyInfo.dataSize)
-        withUnsafeMutableBytes(of: &input.bytes) { bytes in
-            if !bytes.isEmpty {
-                bytes[0] = value
-            }
+    func setChargingEnabled(_ enabled: Bool) throws {
+        let keySet = try resolveChargingKeySet()
+        switch keySet {
+        case .tahoe(let key):
+            let bytes =
+                enabled
+                ? SMCHelperConstants.chargingEnableTahoe
+                : SMCHelperConstants.chargingDisableTahoe
+            try writeBytes(bytes, to: key)
+        case .legacy(let key1, let key2):
+            let bytes =
+                enabled
+                ? SMCHelperConstants.chargingEnableLegacy
+                : SMCHelperConstants.chargingDisableLegacy
+            try writeBytes(bytes, to: key1)
+            try writeBytes(bytes, to: key2)
         }
-
-        _ = try call(&input)
     }
 
     static func diagnose(limit: UInt8) -> SMCHelperDiagnosticReport {
@@ -233,6 +237,54 @@ final class SMCHelperSMCClient {
             throw SMCHelperError.keyNotFound
         }
         return SMCHelperKeyInfo(dataSize: dataSize, dataType: output.keyInfo.dataType)
+    }
+
+    private func writeBytes(_ bytes: [UInt8], to key: SMCHelperSMCKey) throws {
+        let keyInfo = try getKeyInfo(for: key)
+        guard keyInfo.dataSize == bytes.count else {
+            throw SMCHelperError.typeMismatch
+        }
+
+        var input = SMCHelperKeyData()
+        input.key = key.code
+        input.data8 = SMCHelperCommand.writeKey
+        input.keyInfo.dataSize = UInt32(keyInfo.dataSize)
+        withUnsafeMutableBytes(of: &input.bytes) { rawBytes in
+            for index in 0..<rawBytes.count {
+                rawBytes[index] = 0
+            }
+            for (index, byte) in bytes.enumerated() where index < rawBytes.count {
+                rawBytes[index] = byte
+            }
+        }
+
+        _ = try call(&input)
+    }
+
+    private func resolveChargingKeySet() throws -> ChargingKeySet {
+        if let tahoeKey = try? SMCHelperSMCKey(SMCHelperConstants.chargingKeyTahoe) {
+            do {
+                let info = try getKeyInfo(for: tahoeKey)
+                if info.dataSize == SMCHelperConstants.chargingEnableTahoe.count {
+                    return .tahoe(tahoeKey)
+                }
+            } catch let error as SMCHelperError {
+                if case .permissionDenied = error {
+                    throw error
+                }
+            }
+        }
+
+        let key1 = try SMCHelperSMCKey(SMCHelperConstants.chargingKeyLegacy1)
+        let key2 = try SMCHelperSMCKey(SMCHelperConstants.chargingKeyLegacy2)
+        let info1 = try getKeyInfo(for: key1)
+        let info2 = try getKeyInfo(for: key2)
+        guard info1.dataSize == SMCHelperConstants.chargingEnableLegacy.count,
+            info2.dataSize == SMCHelperConstants.chargingEnableLegacy.count
+        else {
+            throw SMCHelperError.typeMismatch
+        }
+        return .legacy(key1, key2)
     }
 
     private func call(_ input: inout SMCHelperKeyData) throws -> SMCHelperKeyData {
@@ -456,6 +508,11 @@ private struct SMCHelperSMCKey {
 private struct SMCHelperKeyInfo {
     let dataSize: Int
     let dataType: UInt32
+}
+
+private enum ChargingKeySet {
+    case tahoe(SMCHelperSMCKey)
+    case legacy(SMCHelperSMCKey, SMCHelperSMCKey)
 }
 
 private enum SMCHelperCommand {

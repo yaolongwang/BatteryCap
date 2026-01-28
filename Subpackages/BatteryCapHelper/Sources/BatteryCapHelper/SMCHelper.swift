@@ -2,6 +2,7 @@ import Foundation
 
 @objc protocol SMCHelperProtocol {
     func setChargeLimit(_ limit: Int, reply: @escaping (Int32) -> Void)
+    func setChargingEnabled(_ enabled: Bool, reply: @escaping (Int32) -> Void)
     func diagnoseChargeLimit(
         _ limit: Int,
         reply: @escaping (Int32, Int32, Int32, Int32, Int32) -> Void
@@ -26,6 +27,17 @@ final class SMCHelper: NSObject, NSXPCListenerDelegate, SMCHelperProtocol {
         let clamped = min(max(limit, 1), 100)
         do {
             try SMCHelperSMCClient().writeChargeLimit(UInt8(clamped))
+            reply(SMCHelperStatus.ok.rawValue)
+        } catch let error as SMCHelperError {
+            reply(error.status.rawValue)
+        } catch {
+            reply(SMCHelperStatus.unknown.rawValue)
+        }
+    }
+
+    func setChargingEnabled(_ enabled: Bool, reply: @escaping (Int32) -> Void) {
+        do {
+            try SMCHelperSMCClient().setChargingEnabled(enabled)
             reply(SMCHelperStatus.ok.rawValue)
         } catch let error as SMCHelperError {
             reply(error.status.rawValue)

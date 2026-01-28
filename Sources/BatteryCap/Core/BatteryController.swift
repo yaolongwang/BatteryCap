@@ -44,25 +44,98 @@ struct SMCBatteryController: BatteryControllerProtocol, Sendable {
             throw BatteryError.unsupportedOperation
         }
 
-        let limit = clampLimit(for: mode)
         switch configuration.status {
         case .enabledDirect:
-            try applyChargeLimit(limit)
+            do {
+                try applyModeDirect(mode)
+            } catch {
+                if shouldFallbackToHelper(error), SMCHelperClient.isInstalled {
+                    try await applyModeWithHelper(mode)
+                    return
+                }
+                throw error
+            }
         case .enabledHelper:
-            try await helperClient.setChargeLimit(limit)
+            do {
+                try await applyModeWithHelper(mode)
+            } catch {
+                if shouldFallbackToDirect(error) {
+                    try applyModeDirect(mode)
+                    return
+                }
+                throw error
+            }
         case .disabled:
             throw BatteryError.permissionDenied
         }
     }
 
-    private func applyChargeLimit(_ limit: Int) throws {
-        guard let keyDefinition = configuration.chargeLimitKey else {
+    private func applyModeDirect(_ mode: ChargingMode) throws {
+        guard let strategy = configuration.controlStrategy else {
             throw BatteryError.unsupportedOperation
         }
 
-        let value = UInt8(limit)
         let client = try SMCClient()
-        try client.writeUInt8(value, to: keyDefinition)
+        switch strategy {
+        case .chargeLimit(let keyDefinition):
+            let limit = clampLimit(for: mode)
+            try client.writeUInt8(UInt8(limit), to: keyDefinition)
+        case .chargingSwitch(let chargingSwitch):
+            let shouldEnable: Bool
+            if case .hold = mode {
+                shouldEnable = false
+            } else {
+                shouldEnable = true
+            }
+            let bytes = shouldEnable ? chargingSwitch.enableBytes : chargingSwitch.disableBytes
+            for keyDefinition in chargingSwitch.keys {
+                try client.writeBytes(bytes, to: keyDefinition)
+            }
+        }
+    }
+
+    private func applyModeWithHelper(_ mode: ChargingMode) async throws {
+        guard let strategy = configuration.controlStrategy else {
+            throw BatteryError.unsupportedOperation
+        }
+
+        switch strategy {
+        case .chargeLimit:
+            let limit = clampLimit(for: mode)
+            try await helperClient.setChargeLimit(limit)
+        case .chargingSwitch:
+            let shouldEnable: Bool
+            if case .hold = mode {
+                shouldEnable = false
+            } else {
+                shouldEnable = true
+            }
+            try await helperClient.setChargingEnabled(shouldEnable)
+        }
+    }
+
+    private func shouldFallbackToHelper(_ error: Error) -> Bool {
+        guard let batteryError = error as? BatteryError else {
+            return false
+        }
+        switch batteryError {
+        case .permissionDenied, .smcWriteFailed:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func shouldFallbackToDirect(_ error: Error) -> Bool {
+        guard let batteryError = error as? BatteryError else {
+            return false
+        }
+        switch batteryError {
+        case .controllerUnavailable:
+            return true
+        default:
+            return false
+        }
     }
 
     private func clampLimit(for mode: ChargingMode) -> Int {

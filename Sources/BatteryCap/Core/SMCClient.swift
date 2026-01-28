@@ -15,11 +15,18 @@ final class SMCClient {
     }
 
     func writeUInt8(_ value: UInt8, to keyDefinition: SMCKeyDefinition) throws {
+        try writeBytes([value], to: keyDefinition)
+    }
+
+    func writeBytes(_ bytes: [UInt8], to keyDefinition: SMCKeyDefinition) throws {
         let keyInfo = try getKeyInfo(for: keyDefinition.key)
         guard keyInfo.dataSize == keyDefinition.dataSize else {
             throw BatteryError.smcTypeMismatch
         }
         if let expectedType = keyDefinition.dataType, expectedType.code != keyInfo.dataType {
+            throw BatteryError.smcTypeMismatch
+        }
+        guard bytes.count == keyDefinition.dataSize else {
             throw BatteryError.smcTypeMismatch
         }
 
@@ -28,9 +35,12 @@ final class SMCClient {
         input.data8 = SMCCommand.writeKey
         input.keyInfo.dataSize = UInt32(keyInfo.dataSize)
 
-        withUnsafeMutableBytes(of: &input.bytes) { bytes in
-            if !bytes.isEmpty {
-                bytes[0] = value
+        withUnsafeMutableBytes(of: &input.bytes) { rawBytes in
+            for index in 0..<rawBytes.count {
+                rawBytes[index] = 0
+            }
+            for (index, byte) in bytes.enumerated() where index < rawBytes.count {
+                rawBytes[index] = byte
             }
         }
 
@@ -64,12 +74,58 @@ final class SMCClient {
         }
     }
 
+    static func checkWriteAccess(_ chargingSwitch: SMCChargingSwitch) -> SMCWriteCheckResult {
+        do {
+            let client = try SMCClient()
+            try client.validate(chargingSwitch)
+            return .supported
+        } catch let error as BatteryError {
+            switch error {
+            case .permissionDenied:
+                return .permissionDenied
+            case .smcKeyNotFound:
+                return .keyNotFound
+            case .smcTypeMismatch:
+                return .typeMismatch
+            case .smcUnavailable:
+                return .smcUnavailable
+            default:
+                return .unknown
+            }
+        } catch {
+            return .unknown
+        }
+    }
+
+    static func checkWriteAccess(_ strategy: SMCChargeControlStrategy) -> SMCWriteCheckResult {
+        switch strategy {
+        case .chargeLimit(let keyDefinition):
+            return checkWriteAccess(keyDefinition)
+        case .chargingSwitch(let chargingSwitch):
+            return checkWriteAccess(chargingSwitch)
+        }
+    }
+
     private func validate(_ keyDefinition: SMCKeyDefinition) throws {
         let keyInfo = try getKeyInfo(for: keyDefinition.key)
         guard keyInfo.dataSize == keyDefinition.dataSize else {
             throw BatteryError.smcTypeMismatch
         }
         if let expectedType = keyDefinition.dataType, expectedType.code != keyInfo.dataType {
+            throw BatteryError.smcTypeMismatch
+        }
+    }
+
+    private func validate(_ chargingSwitch: SMCChargingSwitch) throws {
+        guard !chargingSwitch.keys.isEmpty else {
+            throw BatteryError.smcKeyNotFound
+        }
+        for keyDefinition in chargingSwitch.keys {
+            try validate(keyDefinition)
+        }
+        guard chargingSwitch.dataSize == chargingSwitch.enableBytes.count,
+            chargingSwitch.dataSize == chargingSwitch.disableBytes.count
+        else {
             throw BatteryError.smcTypeMismatch
         }
     }
@@ -370,7 +426,7 @@ extension SMCClient {
         )
     }
 
-    static func keyListReport(maxKeys: Int = 2048) -> SMCKeyListReport {
+    static func keyListReport(maxKeys: Int? = nil) -> SMCKeyListReport {
         let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSMC"))
         guard service != 0 else {
             return SMCKeyListReport(
@@ -433,11 +489,11 @@ extension SMCClient {
             )
         }
 
-        let scanLimit = min(maxKeys, keyCount)
+        let scanLimit = min(maxKeys ?? keyCount, keyCount)
         var candidates: [String] = []
         candidates.reserveCapacity(64)
         var hasBclm = false
-        let keywords = ["BCL", "BFCL", "CHG", "CH0", "CH1", "CHWA", "BAT"]
+        let keywords = ["BCL", "BFCL", "CHG", "CH0", "CH1", "CHT", "CHWA", "BAT"]
 
         for index in 0..<scanLimit {
             guard let key = readKeyAtIndex(connection: connection, index: index) else {

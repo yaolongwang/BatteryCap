@@ -27,6 +27,7 @@ final class BatteryViewModel: ObservableObject {
     private let monitor: BatteryPowerMonitor
     private let privilegeManager: SMCPrivilegeManager
     private var lastAppliedMode: ChargingMode?
+    private var refreshTimer: Timer?
 
     init(
         infoProvider: BatteryInfoProviderProtocol = IOKitBatteryInfoProvider(),
@@ -55,10 +56,14 @@ final class BatteryViewModel: ObservableObject {
 
     deinit {
         monitor.stop()
+        Task { @MainActor [weak self] in
+            self?.stopRefreshTimer()
+        }
     }
 
     func start() {
         monitor.start()
+        startRefreshTimer()
         refreshNow()
     }
 
@@ -186,5 +191,23 @@ final class BatteryViewModel: ObservableObject {
         } else {
             errorMessage = error.localizedDescription
         }
+    }
+
+    private func startRefreshTimer() {
+        guard refreshTimer == nil else {
+            return
+        }
+        let timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.refreshNow()
+            }
+        }
+        timer.tolerance = 5
+        refreshTimer = timer
+    }
+
+    private func stopRefreshTimer() {
+        refreshTimer?.invalidate()
+        refreshTimer = nil
     }
 }

@@ -2,6 +2,7 @@ import Foundation
 
 @objc protocol SMCHelperProtocol {
     func setChargeLimit(_ limit: Int, reply: @escaping (Int32) -> Void)
+    func setChargingEnabled(_ enabled: Bool, reply: @escaping (Int32) -> Void)
     func diagnoseChargeLimit(
         _ limit: Int,
         reply: @escaping (Int32, Int32, Int32, Int32, Int32) -> Void
@@ -44,6 +45,42 @@ final class SMCHelperClient: @unchecked Sendable {
             }
 
             proxy.setChargeLimit(limit) { status in
+                connection.invalidationHandler = nil
+                connection.invalidate()
+                let result = SMCHelperStatus(rawValue: status) ?? .unknown
+                if result == .ok {
+                    gate.resume(continuation, .success(()))
+                } else {
+                    gate.resume(continuation, .failure(result.error))
+                }
+            }
+        }
+    }
+
+    func setChargingEnabled(_ enabled: Bool) async throws {
+        try await withCheckedThrowingContinuation {
+            (continuation: CheckedContinuation<Void, Error>) in
+            let gate = ContinuationGate()
+            let connection = NSXPCConnection(
+                machServiceName: Self.machServiceName, options: .privileged)
+            connection.remoteObjectInterface = NSXPCInterface(with: SMCHelperProtocol.self)
+            connection.invalidationHandler = {
+                gate.resume(continuation, .failure(BatteryError.controllerUnavailable))
+            }
+            connection.resume()
+
+            guard
+                let proxy = connection.remoteObjectProxyWithErrorHandler({ _ in
+                    gate.resume(continuation, .failure(BatteryError.controllerUnavailable))
+                    connection.invalidate()
+                }) as? SMCHelperProtocol
+            else {
+                connection.invalidate()
+                gate.resume(continuation, .failure(BatteryError.controllerUnavailable))
+                return
+            }
+
+            proxy.setChargingEnabled(enabled) { status in
                 connection.invalidationHandler = nil
                 connection.invalidate()
                 let result = SMCHelperStatus(rawValue: status) ?? .unknown
