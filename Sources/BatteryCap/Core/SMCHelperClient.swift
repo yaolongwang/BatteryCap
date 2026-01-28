@@ -2,6 +2,14 @@ import Foundation
 
 @objc protocol SMCHelperProtocol {
     func setChargeLimit(_ limit: Int, reply: @escaping (Int32) -> Void)
+    func diagnoseChargeLimit(
+        _ limit: Int,
+        reply: @escaping (Int32, Int32, Int32, Int32, Int32) -> Void
+    )
+    func readKey(
+        _ key: String,
+        reply: @escaping (Int32, Int32, Int32, Int32, Int32, Int32, Data) -> Void
+    )
 }
 
 /// 特权 Helper 客户端
@@ -47,9 +55,89 @@ final class SMCHelperClient: @unchecked Sendable {
             }
         }
     }
+
+    func diagnoseChargeLimit(_ limit: Int) async throws -> SMCHelperDiagnosticReport {
+        try await withCheckedThrowingContinuation {
+            (continuation: CheckedContinuation<SMCHelperDiagnosticReport, Error>) in
+            let gate = ContinuationGate()
+            let connection = NSXPCConnection(
+                machServiceName: Self.machServiceName, options: .privileged)
+            connection.remoteObjectInterface = NSXPCInterface(with: SMCHelperProtocol.self)
+            connection.invalidationHandler = {
+                gate.resume(continuation, .failure(BatteryError.controllerUnavailable))
+            }
+            connection.resume()
+
+            guard
+                let proxy = connection.remoteObjectProxyWithErrorHandler({ _ in
+                    gate.resume(continuation, .failure(BatteryError.controllerUnavailable))
+                    connection.invalidate()
+                }) as? SMCHelperProtocol
+            else {
+                connection.invalidate()
+                gate.resume(continuation, .failure(BatteryError.controllerUnavailable))
+                return
+            }
+
+            proxy.diagnoseChargeLimit(limit) { status, stage, kern, dataSize, dataType in
+                connection.invalidationHandler = nil
+                connection.invalidate()
+                let statusEnum = SMCHelperStatus(rawValue: status) ?? .unknown
+                let stageEnum = SMCHelperDiagnosticStage(rawValue: stage) ?? .unknown
+                let report = SMCHelperDiagnosticReport(
+                    status: statusEnum,
+                    stage: stageEnum,
+                    kernReturn: kern,
+                    dataSize: dataSize,
+                    dataType: dataType
+                )
+                gate.resume(continuation, .success(report))
+            }
+        }
+    }
+
+    func readKey(_ key: String) async throws -> SMCHelperKeyReadReport {
+        try await withCheckedThrowingContinuation {
+            (continuation: CheckedContinuation<SMCHelperKeyReadReport, Error>) in
+            let gate = ContinuationGate()
+            let connection = NSXPCConnection(
+                machServiceName: Self.machServiceName, options: .privileged)
+            connection.remoteObjectInterface = NSXPCInterface(with: SMCHelperProtocol.self)
+            connection.invalidationHandler = {
+                gate.resume(continuation, .failure(BatteryError.controllerUnavailable))
+            }
+            connection.resume()
+
+            guard
+                let proxy = connection.remoteObjectProxyWithErrorHandler({ _ in
+                    gate.resume(continuation, .failure(BatteryError.controllerUnavailable))
+                    connection.invalidate()
+                }) as? SMCHelperProtocol
+            else {
+                connection.invalidate()
+                gate.resume(continuation, .failure(BatteryError.controllerUnavailable))
+                return
+            }
+
+            proxy.readKey(key) { stage, kern, dataSize, dataType, truncated, _, bytes in
+                connection.invalidationHandler = nil
+                connection.invalidate()
+                let report = SMCHelperKeyReadReport(
+                    key: key,
+                    stage: SMCHelperKeyReadStage(rawValue: stage) ?? .unknown,
+                    kernReturn: kern,
+                    dataSize: dataSize,
+                    dataType: dataType,
+                    bytes: bytes,
+                    truncated: truncated != 0
+                )
+                gate.resume(continuation, .success(report))
+            }
+        }
+    }
 }
 
-private enum SMCHelperStatus: Int32 {
+enum SMCHelperStatus: Int32, Sendable {
     case ok = 0
     case permissionDenied = 1
     case keyNotFound = 2
@@ -79,11 +167,57 @@ private enum SMCHelperStatus: Int32 {
     }
 }
 
+enum SMCHelperDiagnosticStage: Int32, Sendable {
+    case ok = 0
+    case invalidKey = 1
+    case serviceNotFound = 2
+    case serviceOpenFailed = 3
+    case userClientOpenFailed = 4
+    case keyInfoFailed = 5
+    case keyInfoInvalid = 6
+    case typeMismatch = 7
+    case writeFailed = 8
+    case unknown = 99
+}
+
+struct SMCHelperDiagnosticReport: Sendable {
+    let status: SMCHelperStatus
+    let stage: SMCHelperDiagnosticStage
+    let kernReturn: Int32
+    let dataSize: Int32
+    let dataType: Int32
+}
+
+enum SMCHelperKeyReadStage: Int32, Sendable {
+    case ok = 0
+    case invalidKey = 1
+    case serviceNotFound = 2
+    case serviceOpenFailed = 3
+    case userClientOpenFailed = 4
+    case keyInfoFailed = 5
+    case keyInfoInvalid = 6
+    case readFailed = 7
+    case unknown = 99
+}
+
+struct SMCHelperKeyReadReport: Sendable {
+    let key: String
+    let stage: SMCHelperKeyReadStage
+    let kernReturn: Int32
+    let dataSize: Int32
+    let dataType: Int32
+    let bytes: Data
+    let truncated: Bool
+}
+
 private final class ContinuationGate {
     private let lock = NSLock()
     private var didResume = false
 
-    func resume(_ continuation: CheckedContinuation<Void, Error>, _ result: Result<Void, Error>) {
+    func resume<T: Sendable>(
+        _ continuation: CheckedContinuation<T, Error>,
+        _ result: Result<T, Error>
+    ) {
         lock.lock()
         if didResume {
             lock.unlock()
@@ -93,8 +227,8 @@ private final class ContinuationGate {
         lock.unlock()
 
         switch result {
-        case .success:
-            continuation.resume()
+        case .success(let value):
+            continuation.resume(returning: value)
         case .failure(let error):
             continuation.resume(throwing: error)
         }

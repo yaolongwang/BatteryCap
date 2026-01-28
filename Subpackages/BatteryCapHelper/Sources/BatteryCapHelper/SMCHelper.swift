@@ -2,6 +2,14 @@ import Foundation
 
 @objc protocol SMCHelperProtocol {
     func setChargeLimit(_ limit: Int, reply: @escaping (Int32) -> Void)
+    func diagnoseChargeLimit(
+        _ limit: Int,
+        reply: @escaping (Int32, Int32, Int32, Int32, Int32) -> Void
+    )
+    func readKey(
+        _ key: String,
+        reply: @escaping (Int32, Int32, Int32, Int32, Int32, Int32, Data) -> Void
+    )
 }
 
 final class SMCHelper: NSObject, NSXPCListenerDelegate, SMCHelperProtocol {
@@ -24,6 +32,37 @@ final class SMCHelper: NSObject, NSXPCListenerDelegate, SMCHelperProtocol {
         } catch {
             reply(SMCHelperStatus.unknown.rawValue)
         }
+    }
+
+    func diagnoseChargeLimit(
+        _ limit: Int,
+        reply: @escaping (Int32, Int32, Int32, Int32, Int32) -> Void
+    ) {
+        let clamped = min(max(limit, 1), 100)
+        let report = SMCHelperSMCClient.diagnose(limit: UInt8(clamped))
+        reply(
+            report.status.rawValue,
+            report.stage.rawValue,
+            Int32(report.kernReturn),
+            Int32(report.dataSize),
+            Int32(bitPattern: report.dataType)
+        )
+    }
+
+    func readKey(
+        _ key: String,
+        reply: @escaping (Int32, Int32, Int32, Int32, Int32, Int32, Data) -> Void
+    ) {
+        let report = SMCHelperSMCClient.readKeyReport(key)
+        reply(
+            report.stage.rawValue,
+            Int32(report.kernReturn),
+            Int32(report.dataSize),
+            Int32(bitPattern: report.dataType),
+            report.truncated ? 1 : 0,
+            Int32(report.bytes.count),
+            report.bytes
+        )
     }
 }
 

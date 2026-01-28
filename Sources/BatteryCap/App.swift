@@ -1,8 +1,18 @@
 import SwiftUI
 
+@main
+struct BatteryCapEntry {
+    static func main() {
+        if BatteryCapDiagnostics.shouldRun {
+            BatteryCapDiagnostics.run()
+            return
+        }
+        BatteryCapApp.main()
+    }
+}
+
 /// BatteryCap 主应用入口
 /// 使用 MenuBarExtra 作为主场景，提供菜单栏常驻体验
-@main
 struct BatteryCapApp: App {
     @StateObject private var viewModel = BatteryViewModel()
 
