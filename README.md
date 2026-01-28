@@ -1,9 +1,17 @@
 # BatteryCap
 
+macOS 菜单栏电池管理工具：支持电量锁定、充电上限与状态监控。
+
 ## 运行（开发）
 ```bash
 swift run
 ```
+
+## 本地安装写入组件（必须）
+```bash
+scripts/install-helper.sh
+```
+安装过程中会弹出管理员授权，请输入密码。
 
 ## SMC 诊断（命令行）
 ```bash
@@ -11,48 +19,37 @@ swift run BatteryCap -- --diagnose
 ```
 如提示 Helper 诊断接口不可用，请重新运行 `scripts/install-helper.sh` 以更新特权组件。
 
-## 已验证结论（2026-01-27）
-设备：Mac16,13（M4 Air） / macOS 26.2
+## 工作原理（简述）
+- 优先使用 `BCLM`（若机型支持）写入充电上限。
+- 若 `BCLM` 不存在，则使用“充电开关键”控制充电开/关：
+  - Tahoe 固件：`CHTE`（4 字节）
+  - 旧固件：`CH0B` + `CH0C`（各 1 字节）
+- 当“电量锁定”开启且电量达到上限时，会暂停充电；电量低于上限时再恢复充电。
+
+## 已验证环境（2026-01-28）
+设备：Mac16,13 / macOS 26.2 (Build 25C56)
 
 - SMC Key 列表中不包含 `BCLM`
-- `BCLM` 的 KeyInfo 返回 `size=0` → 键不存在/不可写
-- 读取到的候选键仅为只读状态类（`CH0*` / `PBAT` / `UBAT`），无可写充电上限键
-- `CH0J` 即使特权读取仍返回 `kIOReturnNotPrivileged`
+- `CHTE` 存在并可读取
+- 通过特权 Helper 写入充电开关路径可用
 
-结论：当前机型 + 系统组合下，SMC 充电上限控制不可用（系统层面限制）。
+## SIP 状态（建议保持开启）
+本项目运行**不需要关闭 SIP**。建议保持 `System Integrity Protection: enabled`。
 
-## 本地安装写入组件（不需要开发者账号）
-```bash
-scripts/install-helper.sh
-```
-安装过程中会弹出管理员授权，请输入密码。
-
-## 部分关闭 SIP（高风险，仅用于尝试）
-注意：这会显著降低系统安全性，可能影响系统稳定性与更新。即便部分关闭 SIP，也**不保证**能开启 SMC 写入。
-
-**Apple Silicon 进入恢复模式：**
-1. 关机
-2. 长按电源键，直到出现“启动选项”
-3. 选择“选项”→“继续”，进入恢复模式
-4. 菜单栏「实用工具」→「终端」
-
-**执行命令（部分关闭 SIP）：**
-```bash
-csrutil enable --without debug --without fs --without nvram
-```
-
-**重启：**
-```bash
-reboot
-```
-
-**回到系统后检查状态：**
+如需确认或恢复：
 ```bash
 csrutil status
 ```
 
-**恢复默认（重新开启 SIP）：**
-进入恢复模式后执行：
+恢复默认（进入恢复模式后执行）：
 ```bash
 csrutil enable
 ```
+
+## 常见问题
+1. **提示“权限不足”**  
+   - 先运行 `scripts/install-helper.sh` 重新安装 Helper  
+   - 运行 `swift run BatteryCap -- --diagnose`，确认 `SMC 状态: 已启用特权写入`
+2. **锁定无效/无响应**  
+   - 确认设备处于外接电源  
+   - 将上限设置为低于当前电量，再开启“电量锁定”验证

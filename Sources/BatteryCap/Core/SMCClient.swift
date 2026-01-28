@@ -3,860 +3,860 @@ import IOKit
 
 /// SMC 客户端（简化写入）
 final class SMCClient {
-    private var connection: io_connect_t = 0
-    private var isClosed = false
+  private var connection: io_connect_t = 0
+  private var isClosed = false
 
-    init() throws {
-        try open()
+  init() throws {
+    try open()
+  }
+
+  deinit {
+    close()
+  }
+
+  func writeUInt8(_ value: UInt8, to keyDefinition: SMCKeyDefinition) throws {
+    try writeBytes([value], to: keyDefinition)
+  }
+
+  func writeBytes(_ bytes: [UInt8], to keyDefinition: SMCKeyDefinition) throws {
+    let keyInfo = try getKeyInfo(for: keyDefinition.key)
+    guard keyInfo.dataSize == keyDefinition.dataSize else {
+      throw BatteryError.smcTypeMismatch
+    }
+    if let expectedType = keyDefinition.dataType, expectedType.code != keyInfo.dataType {
+      throw BatteryError.smcTypeMismatch
+    }
+    guard bytes.count == keyDefinition.dataSize else {
+      throw BatteryError.smcTypeMismatch
     }
 
-    deinit {
-        close()
+    var input = SMCKeyData()
+    input.key = keyDefinition.key.code
+    input.data8 = SMCCommand.writeKey
+    input.keyInfo.dataSize = UInt32(keyInfo.dataSize)
+
+    withUnsafeMutableBytes(of: &input.bytes) { rawBytes in
+      for index in 0..<rawBytes.count {
+        rawBytes[index] = 0
+      }
+      for (index, byte) in bytes.enumerated() where index < rawBytes.count {
+        rawBytes[index] = byte
+      }
     }
 
-    func writeUInt8(_ value: UInt8, to keyDefinition: SMCKeyDefinition) throws {
-        try writeBytes([value], to: keyDefinition)
+    _ = try call(&input)
+  }
+
+  static func canWrite(_ keyDefinition: SMCKeyDefinition) -> Bool {
+    checkWriteAccess(keyDefinition) == .supported
+  }
+
+  static func checkWriteAccess(_ keyDefinition: SMCKeyDefinition) -> SMCWriteCheckResult {
+    do {
+      let client = try SMCClient()
+      try client.validate(keyDefinition)
+      return .supported
+    } catch let error as BatteryError {
+      switch error {
+      case .permissionDenied:
+        return .permissionDenied
+      case .smcKeyNotFound:
+        return .keyNotFound
+      case .smcTypeMismatch:
+        return .typeMismatch
+      case .smcUnavailable:
+        return .smcUnavailable
+      default:
+        return .unknown
+      }
+    } catch {
+      return .unknown
+    }
+  }
+
+  static func checkWriteAccess(_ chargingSwitch: SMCChargingSwitch) -> SMCWriteCheckResult {
+    do {
+      let client = try SMCClient()
+      try client.validate(chargingSwitch)
+      return .supported
+    } catch let error as BatteryError {
+      switch error {
+      case .permissionDenied:
+        return .permissionDenied
+      case .smcKeyNotFound:
+        return .keyNotFound
+      case .smcTypeMismatch:
+        return .typeMismatch
+      case .smcUnavailable:
+        return .smcUnavailable
+      default:
+        return .unknown
+      }
+    } catch {
+      return .unknown
+    }
+  }
+
+  static func checkWriteAccess(_ strategy: SMCChargeControlStrategy) -> SMCWriteCheckResult {
+    switch strategy {
+    case .chargeLimit(let keyDefinition):
+      return checkWriteAccess(keyDefinition)
+    case .chargingSwitch(let chargingSwitch):
+      return checkWriteAccess(chargingSwitch)
+    }
+  }
+
+  private func validate(_ keyDefinition: SMCKeyDefinition) throws {
+    let keyInfo = try getKeyInfo(for: keyDefinition.key)
+    guard keyInfo.dataSize == keyDefinition.dataSize else {
+      throw BatteryError.smcTypeMismatch
+    }
+    if let expectedType = keyDefinition.dataType, expectedType.code != keyInfo.dataType {
+      throw BatteryError.smcTypeMismatch
+    }
+  }
+
+  private func validate(_ chargingSwitch: SMCChargingSwitch) throws {
+    guard !chargingSwitch.keys.isEmpty else {
+      throw BatteryError.smcKeyNotFound
+    }
+    for keyDefinition in chargingSwitch.keys {
+      try validate(keyDefinition)
+    }
+    guard chargingSwitch.dataSize == chargingSwitch.enableBytes.count,
+      chargingSwitch.dataSize == chargingSwitch.disableBytes.count
+    else {
+      throw BatteryError.smcTypeMismatch
+    }
+  }
+
+  private func open() throws {
+    let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSMC"))
+    guard service != 0 else {
+      throw BatteryError.smcUnavailable
+    }
+    defer {
+      IOObjectRelease(service)
     }
 
-    func writeBytes(_ bytes: [UInt8], to keyDefinition: SMCKeyDefinition) throws {
-        let keyInfo = try getKeyInfo(for: keyDefinition.key)
-        guard keyInfo.dataSize == keyDefinition.dataSize else {
-            throw BatteryError.smcTypeMismatch
-        }
-        if let expectedType = keyDefinition.dataType, expectedType.code != keyInfo.dataType {
-            throw BatteryError.smcTypeMismatch
-        }
-        guard bytes.count == keyDefinition.dataSize else {
-            throw BatteryError.smcTypeMismatch
-        }
-
-        var input = SMCKeyData()
-        input.key = keyDefinition.key.code
-        input.data8 = SMCCommand.writeKey
-        input.keyInfo.dataSize = UInt32(keyInfo.dataSize)
-
-        withUnsafeMutableBytes(of: &input.bytes) { rawBytes in
-            for index in 0..<rawBytes.count {
-                rawBytes[index] = 0
-            }
-            for (index, byte) in bytes.enumerated() where index < rawBytes.count {
-                rawBytes[index] = byte
-            }
-        }
-
-        _ = try call(&input)
+    var openedConnection: io_connect_t = 0
+    let openResult = IOServiceOpen(service, mach_task_self_, 0, &openedConnection)
+    guard openResult == KERN_SUCCESS else {
+      throw mapReturn(openResult)
     }
 
-    static func canWrite(_ keyDefinition: SMCKeyDefinition) -> Bool {
-        checkWriteAccess(keyDefinition) == .supported
+    connection = openedConnection
+
+    let openCallResult = IOConnectCallStructMethod(
+      connection,
+      SMCCommand.userClientOpen,
+      nil,
+      0,
+      nil,
+      nil
+    )
+
+    guard openCallResult == KERN_SUCCESS else {
+      close()
+      throw mapReturn(openCallResult)
+    }
+  }
+
+  private func close() {
+    guard !isClosed else {
+      return
+    }
+    isClosed = true
+
+    if connection != 0 {
+      _ = IOConnectCallStructMethod(connection, SMCCommand.userClientClose, nil, 0, nil, nil)
+      IOServiceClose(connection)
+      connection = 0
+    }
+  }
+
+  private func getKeyInfo(for key: SMCKey) throws -> SMCKeyInfo {
+    var input = SMCKeyData()
+    input.key = key.code
+    input.data8 = SMCCommand.getKeyInfo
+
+    let output = try call(&input)
+
+    let dataSize = Int(output.keyInfo.dataSize)
+    guard dataSize > 0 else {
+      throw BatteryError.smcKeyNotFound
     }
 
-    static func checkWriteAccess(_ keyDefinition: SMCKeyDefinition) -> SMCWriteCheckResult {
-        do {
-            let client = try SMCClient()
-            try client.validate(keyDefinition)
-            return .supported
-        } catch let error as BatteryError {
-            switch error {
-            case .permissionDenied:
-                return .permissionDenied
-            case .smcKeyNotFound:
-                return .keyNotFound
-            case .smcTypeMismatch:
-                return .typeMismatch
-            case .smcUnavailable:
-                return .smcUnavailable
-            default:
-                return .unknown
-            }
-        } catch {
-            return .unknown
-        }
+    return SMCKeyInfo(dataSize: dataSize, dataType: output.keyInfo.dataType)
+  }
+
+  private func call(_ input: inout SMCKeyData) throws -> SMCKeyData {
+    var output = SMCKeyData()
+    var outputSize = MemoryLayout<SMCKeyData>.size
+
+    let result = IOConnectCallStructMethod(
+      connection,
+      SMCCommand.handleYPCEvent,
+      &input,
+      MemoryLayout<SMCKeyData>.size,
+      &output,
+      &outputSize
+    )
+
+    guard result == KERN_SUCCESS else {
+      throw mapReturn(result)
     }
 
-    static func checkWriteAccess(_ chargingSwitch: SMCChargingSwitch) -> SMCWriteCheckResult {
-        do {
-            let client = try SMCClient()
-            try client.validate(chargingSwitch)
-            return .supported
-        } catch let error as BatteryError {
-            switch error {
-            case .permissionDenied:
-                return .permissionDenied
-            case .smcKeyNotFound:
-                return .keyNotFound
-            case .smcTypeMismatch:
-                return .typeMismatch
-            case .smcUnavailable:
-                return .smcUnavailable
-            default:
-                return .unknown
-            }
-        } catch {
-            return .unknown
-        }
+    return output
+  }
+
+  private func mapReturn(_ result: kern_return_t) -> BatteryError {
+    switch result {
+    case kIOReturnNotPrivileged, kIOReturnNotPermitted:
+      return .permissionDenied
+    case kIOReturnNoDevice:
+      return .smcUnavailable
+    default:
+      return .smcWriteFailed
     }
-
-    static func checkWriteAccess(_ strategy: SMCChargeControlStrategy) -> SMCWriteCheckResult {
-        switch strategy {
-        case .chargeLimit(let keyDefinition):
-            return checkWriteAccess(keyDefinition)
-        case .chargingSwitch(let chargingSwitch):
-            return checkWriteAccess(chargingSwitch)
-        }
-    }
-
-    private func validate(_ keyDefinition: SMCKeyDefinition) throws {
-        let keyInfo = try getKeyInfo(for: keyDefinition.key)
-        guard keyInfo.dataSize == keyDefinition.dataSize else {
-            throw BatteryError.smcTypeMismatch
-        }
-        if let expectedType = keyDefinition.dataType, expectedType.code != keyInfo.dataType {
-            throw BatteryError.smcTypeMismatch
-        }
-    }
-
-    private func validate(_ chargingSwitch: SMCChargingSwitch) throws {
-        guard !chargingSwitch.keys.isEmpty else {
-            throw BatteryError.smcKeyNotFound
-        }
-        for keyDefinition in chargingSwitch.keys {
-            try validate(keyDefinition)
-        }
-        guard chargingSwitch.dataSize == chargingSwitch.enableBytes.count,
-            chargingSwitch.dataSize == chargingSwitch.disableBytes.count
-        else {
-            throw BatteryError.smcTypeMismatch
-        }
-    }
-
-    private func open() throws {
-        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSMC"))
-        guard service != 0 else {
-            throw BatteryError.smcUnavailable
-        }
-        defer {
-            IOObjectRelease(service)
-        }
-
-        var openedConnection: io_connect_t = 0
-        let openResult = IOServiceOpen(service, mach_task_self_, 0, &openedConnection)
-        guard openResult == KERN_SUCCESS else {
-            throw mapReturn(openResult)
-        }
-
-        connection = openedConnection
-
-        let openCallResult = IOConnectCallStructMethod(
-            connection,
-            SMCCommand.userClientOpen,
-            nil,
-            0,
-            nil,
-            nil
-        )
-
-        guard openCallResult == KERN_SUCCESS else {
-            close()
-            throw mapReturn(openCallResult)
-        }
-    }
-
-    private func close() {
-        guard !isClosed else {
-            return
-        }
-        isClosed = true
-
-        if connection != 0 {
-            _ = IOConnectCallStructMethod(connection, SMCCommand.userClientClose, nil, 0, nil, nil)
-            IOServiceClose(connection)
-            connection = 0
-        }
-    }
-
-    private func getKeyInfo(for key: SMCKey) throws -> SMCKeyInfo {
-        var input = SMCKeyData()
-        input.key = key.code
-        input.data8 = SMCCommand.getKeyInfo
-
-        let output = try call(&input)
-
-        let dataSize = Int(output.keyInfo.dataSize)
-        guard dataSize > 0 else {
-            throw BatteryError.smcKeyNotFound
-        }
-
-        return SMCKeyInfo(dataSize: dataSize, dataType: output.keyInfo.dataType)
-    }
-
-    private func call(_ input: inout SMCKeyData) throws -> SMCKeyData {
-        var output = SMCKeyData()
-        var outputSize = MemoryLayout<SMCKeyData>.size
-
-        let result = IOConnectCallStructMethod(
-            connection,
-            SMCCommand.handleYPCEvent,
-            &input,
-            MemoryLayout<SMCKeyData>.size,
-            &output,
-            &outputSize
-        )
-
-        guard result == KERN_SUCCESS else {
-            throw mapReturn(result)
-        }
-
-        return output
-    }
-
-    private func mapReturn(_ result: kern_return_t) -> BatteryError {
-        switch result {
-        case kIOReturnNotPrivileged, kIOReturnNotPermitted:
-            return .permissionDenied
-        case kIOReturnNoDevice:
-            return .smcUnavailable
-        default:
-            return .smcWriteFailed
-        }
-    }
+  }
 }
 
 struct SMCDiagnosticReport {
-    let result: SMCWriteCheckResult
-    let stage: SMCDiagnosticStage
-    let kernReturn: kern_return_t
-    let dataSize: Int
-    let dataType: UInt32
+  let result: SMCWriteCheckResult
+  let stage: SMCDiagnosticStage
+  let kernReturn: kern_return_t
+  let dataSize: Int
+  let dataType: UInt32
 }
 
 enum SMCDiagnosticStage: Int32 {
-    case ok = 0
-    case serviceNotFound = 1
-    case serviceOpenFailed = 2
-    case userClientOpenFailed = 3
-    case keyInfoFailed = 4
-    case keyInfoInvalid = 5
-    case typeMismatch = 6
-    case writeFailed = 7
+  case ok = 0
+  case serviceNotFound = 1
+  case serviceOpenFailed = 2
+  case userClientOpenFailed = 3
+  case keyInfoFailed = 4
+  case keyInfoInvalid = 5
+  case typeMismatch = 6
+  case writeFailed = 7
 }
 
 struct SMCKeyListReport {
-    let stage: SMCKeyListStage
-    let kernReturn: kern_return_t
-    let keyCount: Int
-    let scannedCount: Int
-    let hasBclm: Bool
-    let candidates: [String]
+  let stage: SMCKeyListStage
+  let kernReturn: kern_return_t
+  let keyCount: Int
+  let scannedCount: Int
+  let hasBclm: Bool
+  let candidates: [String]
 }
 
 enum SMCKeyListStage: Int32 {
-    case ok = 0
-    case serviceNotFound = 1
-    case serviceOpenFailed = 2
-    case userClientOpenFailed = 3
-    case keyCountFailed = 4
-    case keyReadFailed = 5
-    case unknown = 99
+  case ok = 0
+  case serviceNotFound = 1
+  case serviceOpenFailed = 2
+  case userClientOpenFailed = 3
+  case keyCountFailed = 4
+  case keyReadFailed = 5
+  case unknown = 99
 }
 
 struct SMCKeyReadReport {
-    let key: String
-    let stage: SMCKeyReadStage
-    let kernReturn: kern_return_t
-    let dataSize: Int
-    let dataType: UInt32
-    let bytes: [UInt8]
-    let truncated: Bool
+  let key: String
+  let stage: SMCKeyReadStage
+  let kernReturn: kern_return_t
+  let dataSize: Int
+  let dataType: UInt32
+  let bytes: [UInt8]
+  let truncated: Bool
 }
 
 enum SMCKeyReadStage: Int32 {
-    case ok = 0
-    case invalidKey = 1
-    case serviceNotFound = 2
-    case serviceOpenFailed = 3
-    case userClientOpenFailed = 4
-    case keyInfoFailed = 5
-    case keyInfoInvalid = 6
-    case readFailed = 7
+  case ok = 0
+  case invalidKey = 1
+  case serviceNotFound = 2
+  case serviceOpenFailed = 3
+  case userClientOpenFailed = 4
+  case keyInfoFailed = 5
+  case keyInfoInvalid = 6
+  case readFailed = 7
 }
 
 extension SMCClient {
-    static func diagnosticReport(_ keyDefinition: SMCKeyDefinition, value: UInt8)
-        -> SMCDiagnosticReport
-    {
-        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSMC"))
-        guard service != 0 else {
-            return SMCDiagnosticReport(
-                result: .smcUnavailable,
-                stage: .serviceNotFound,
-                kernReturn: kIOReturnNoDevice,
-                dataSize: 0,
-                dataType: 0
-            )
-        }
-        defer {
-            IOObjectRelease(service)
-        }
-
-        var connection: io_connect_t = 0
-        let openResult = IOServiceOpen(service, mach_task_self_, 0, &connection)
-        guard openResult == KERN_SUCCESS else {
-            return SMCDiagnosticReport(
-                result: mapReturnToResult(openResult),
-                stage: .serviceOpenFailed,
-                kernReturn: openResult,
-                dataSize: 0,
-                dataType: 0
-            )
-        }
-        defer {
-            _ = IOConnectCallStructMethod(connection, SMCCommand.userClientClose, nil, 0, nil, nil)
-            IOServiceClose(connection)
-        }
-
-        let openCallResult = IOConnectCallStructMethod(
-            connection,
-            SMCCommand.userClientOpen,
-            nil,
-            0,
-            nil,
-            nil
-        )
-        guard openCallResult == KERN_SUCCESS else {
-            return SMCDiagnosticReport(
-                result: mapReturnToResult(openCallResult),
-                stage: .userClientOpenFailed,
-                kernReturn: openCallResult,
-                dataSize: 0,
-                dataType: 0
-            )
-        }
-
-        var keyInfoInput = SMCKeyData()
-        keyInfoInput.key = keyDefinition.key.code
-        keyInfoInput.data8 = SMCCommand.getKeyInfo
-
-        var keyInfoOutput = SMCKeyData()
-        var keyInfoOutputSize = MemoryLayout<SMCKeyData>.size
-        let keyInfoResult = IOConnectCallStructMethod(
-            connection,
-            SMCCommand.handleYPCEvent,
-            &keyInfoInput,
-            MemoryLayout<SMCKeyData>.size,
-            &keyInfoOutput,
-            &keyInfoOutputSize
-        )
-        guard keyInfoResult == KERN_SUCCESS else {
-            return SMCDiagnosticReport(
-                result: mapReturnToResult(keyInfoResult),
-                stage: .keyInfoFailed,
-                kernReturn: keyInfoResult,
-                dataSize: 0,
-                dataType: 0
-            )
-        }
-
-        let dataSize = Int(keyInfoOutput.keyInfo.dataSize)
-        let dataType = keyInfoOutput.keyInfo.dataType
-        guard dataSize > 0 else {
-            return SMCDiagnosticReport(
-                result: .keyNotFound,
-                stage: .keyInfoInvalid,
-                kernReturn: KERN_SUCCESS,
-                dataSize: 0,
-                dataType: dataType
-            )
-        }
-        guard dataSize == keyDefinition.dataSize else {
-            return SMCDiagnosticReport(
-                result: .typeMismatch,
-                stage: .typeMismatch,
-                kernReturn: KERN_SUCCESS,
-                dataSize: dataSize,
-                dataType: dataType
-            )
-        }
-        if let expectedType = keyDefinition.dataType, expectedType.code != dataType {
-            return SMCDiagnosticReport(
-                result: .typeMismatch,
-                stage: .typeMismatch,
-                kernReturn: KERN_SUCCESS,
-                dataSize: dataSize,
-                dataType: dataType
-            )
-        }
-
-        var writeInput = SMCKeyData()
-        writeInput.key = keyDefinition.key.code
-        writeInput.data8 = SMCCommand.writeKey
-        writeInput.keyInfo.dataSize = UInt32(dataSize)
-        withUnsafeMutableBytes(of: &writeInput.bytes) { bytes in
-            if !bytes.isEmpty {
-                bytes[0] = value
-            }
-        }
-
-        var writeOutput = SMCKeyData()
-        var writeOutputSize = MemoryLayout<SMCKeyData>.size
-        let writeResult = IOConnectCallStructMethod(
-            connection,
-            SMCCommand.handleYPCEvent,
-            &writeInput,
-            MemoryLayout<SMCKeyData>.size,
-            &writeOutput,
-            &writeOutputSize
-        )
-        guard writeResult == KERN_SUCCESS else {
-            return SMCDiagnosticReport(
-                result: mapReturnToResult(writeResult),
-                stage: .writeFailed,
-                kernReturn: writeResult,
-                dataSize: dataSize,
-                dataType: dataType
-            )
-        }
-
-        return SMCDiagnosticReport(
-            result: .supported,
-            stage: .ok,
-            kernReturn: KERN_SUCCESS,
-            dataSize: dataSize,
-            dataType: dataType
-        )
+  static func diagnosticReport(_ keyDefinition: SMCKeyDefinition, value: UInt8)
+    -> SMCDiagnosticReport
+  {
+    let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSMC"))
+    guard service != 0 else {
+      return SMCDiagnosticReport(
+        result: .smcUnavailable,
+        stage: .serviceNotFound,
+        kernReturn: kIOReturnNoDevice,
+        dataSize: 0,
+        dataType: 0
+      )
+    }
+    defer {
+      IOObjectRelease(service)
     }
 
-    static func keyListReport(maxKeys: Int? = nil) -> SMCKeyListReport {
-        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSMC"))
-        guard service != 0 else {
-            return SMCKeyListReport(
-                stage: .serviceNotFound,
-                kernReturn: kIOReturnNoDevice,
-                keyCount: 0,
-                scannedCount: 0,
-                hasBclm: false,
-                candidates: []
-            )
-        }
-        defer {
-            IOObjectRelease(service)
-        }
+    var connection: io_connect_t = 0
+    let openResult = IOServiceOpen(service, mach_task_self_, 0, &connection)
+    guard openResult == KERN_SUCCESS else {
+      return SMCDiagnosticReport(
+        result: mapReturnToResult(openResult),
+        stage: .serviceOpenFailed,
+        kernReturn: openResult,
+        dataSize: 0,
+        dataType: 0
+      )
+    }
+    defer {
+      _ = IOConnectCallStructMethod(connection, SMCCommand.userClientClose, nil, 0, nil, nil)
+      IOServiceClose(connection)
+    }
 
-        var connection: io_connect_t = 0
-        let openResult = IOServiceOpen(service, mach_task_self_, 0, &connection)
-        guard openResult == KERN_SUCCESS else {
-            return SMCKeyListReport(
-                stage: .serviceOpenFailed,
-                kernReturn: openResult,
-                keyCount: 0,
-                scannedCount: 0,
-                hasBclm: false,
-                candidates: []
-            )
-        }
-        defer {
-            _ = IOConnectCallStructMethod(connection, SMCCommand.userClientClose, nil, 0, nil, nil)
-            IOServiceClose(connection)
-        }
+    let openCallResult = IOConnectCallStructMethod(
+      connection,
+      SMCCommand.userClientOpen,
+      nil,
+      0,
+      nil,
+      nil
+    )
+    guard openCallResult == KERN_SUCCESS else {
+      return SMCDiagnosticReport(
+        result: mapReturnToResult(openCallResult),
+        stage: .userClientOpenFailed,
+        kernReturn: openCallResult,
+        dataSize: 0,
+        dataType: 0
+      )
+    }
 
-        let openCallResult = IOConnectCallStructMethod(
-            connection,
-            SMCCommand.userClientOpen,
-            nil,
-            0,
-            nil,
-            nil
-        )
-        guard openCallResult == KERN_SUCCESS else {
-            return SMCKeyListReport(
-                stage: .userClientOpenFailed,
-                kernReturn: openCallResult,
-                keyCount: 0,
-                scannedCount: 0,
-                hasBclm: false,
-                candidates: []
-            )
-        }
+    var keyInfoInput = SMCKeyData()
+    keyInfoInput.key = keyDefinition.key.code
+    keyInfoInput.data8 = SMCCommand.getKeyInfo
 
-        guard let keyCount = readKeyCount(connection: connection) else {
-            return SMCKeyListReport(
-                stage: .keyCountFailed,
-                kernReturn: KERN_SUCCESS,
-                keyCount: 0,
-                scannedCount: 0,
-                hasBclm: false,
-                candidates: []
-            )
-        }
+    var keyInfoOutput = SMCKeyData()
+    var keyInfoOutputSize = MemoryLayout<SMCKeyData>.size
+    let keyInfoResult = IOConnectCallStructMethod(
+      connection,
+      SMCCommand.handleYPCEvent,
+      &keyInfoInput,
+      MemoryLayout<SMCKeyData>.size,
+      &keyInfoOutput,
+      &keyInfoOutputSize
+    )
+    guard keyInfoResult == KERN_SUCCESS else {
+      return SMCDiagnosticReport(
+        result: mapReturnToResult(keyInfoResult),
+        stage: .keyInfoFailed,
+        kernReturn: keyInfoResult,
+        dataSize: 0,
+        dataType: 0
+      )
+    }
 
-        let scanLimit = min(maxKeys ?? keyCount, keyCount)
-        var candidates: [String] = []
-        candidates.reserveCapacity(64)
-        var hasBclm = false
-        let keywords = ["BCL", "BFCL", "CHG", "CH0", "CH1", "CHT", "CHWA", "BAT"]
+    let dataSize = Int(keyInfoOutput.keyInfo.dataSize)
+    let dataType = keyInfoOutput.keyInfo.dataType
+    guard dataSize > 0 else {
+      return SMCDiagnosticReport(
+        result: .keyNotFound,
+        stage: .keyInfoInvalid,
+        kernReturn: KERN_SUCCESS,
+        dataSize: 0,
+        dataType: dataType
+      )
+    }
+    guard dataSize == keyDefinition.dataSize else {
+      return SMCDiagnosticReport(
+        result: .typeMismatch,
+        stage: .typeMismatch,
+        kernReturn: KERN_SUCCESS,
+        dataSize: dataSize,
+        dataType: dataType
+      )
+    }
+    if let expectedType = keyDefinition.dataType, expectedType.code != dataType {
+      return SMCDiagnosticReport(
+        result: .typeMismatch,
+        stage: .typeMismatch,
+        kernReturn: KERN_SUCCESS,
+        dataSize: dataSize,
+        dataType: dataType
+      )
+    }
 
-        for index in 0..<scanLimit {
-            guard let key = readKeyAtIndex(connection: connection, index: index) else {
-                return SMCKeyListReport(
-                    stage: .keyReadFailed,
-                    kernReturn: KERN_SUCCESS,
-                    keyCount: keyCount,
-                    scannedCount: index,
-                    hasBclm: hasBclm,
-                    candidates: candidates
-                )
-            }
+    var writeInput = SMCKeyData()
+    writeInput.key = keyDefinition.key.code
+    writeInput.data8 = SMCCommand.writeKey
+    writeInput.keyInfo.dataSize = UInt32(dataSize)
+    withUnsafeMutableBytes(of: &writeInput.bytes) { bytes in
+      if !bytes.isEmpty {
+        bytes[0] = value
+      }
+    }
 
-            if key == "BCLM" {
-                hasBclm = true
-            }
-            if keywords.contains(where: { key.contains($0) }) {
-                candidates.append(key)
-            }
-        }
+    var writeOutput = SMCKeyData()
+    var writeOutputSize = MemoryLayout<SMCKeyData>.size
+    let writeResult = IOConnectCallStructMethod(
+      connection,
+      SMCCommand.handleYPCEvent,
+      &writeInput,
+      MemoryLayout<SMCKeyData>.size,
+      &writeOutput,
+      &writeOutputSize
+    )
+    guard writeResult == KERN_SUCCESS else {
+      return SMCDiagnosticReport(
+        result: mapReturnToResult(writeResult),
+        stage: .writeFailed,
+        kernReturn: writeResult,
+        dataSize: dataSize,
+        dataType: dataType
+      )
+    }
 
-        let trimmedCandidates = candidates.count > 120 ? Array(candidates.prefix(120)) : candidates
+    return SMCDiagnosticReport(
+      result: .supported,
+      stage: .ok,
+      kernReturn: KERN_SUCCESS,
+      dataSize: dataSize,
+      dataType: dataType
+    )
+  }
+
+  static func keyListReport(maxKeys: Int? = nil) -> SMCKeyListReport {
+    let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSMC"))
+    guard service != 0 else {
+      return SMCKeyListReport(
+        stage: .serviceNotFound,
+        kernReturn: kIOReturnNoDevice,
+        keyCount: 0,
+        scannedCount: 0,
+        hasBclm: false,
+        candidates: []
+      )
+    }
+    defer {
+      IOObjectRelease(service)
+    }
+
+    var connection: io_connect_t = 0
+    let openResult = IOServiceOpen(service, mach_task_self_, 0, &connection)
+    guard openResult == KERN_SUCCESS else {
+      return SMCKeyListReport(
+        stage: .serviceOpenFailed,
+        kernReturn: openResult,
+        keyCount: 0,
+        scannedCount: 0,
+        hasBclm: false,
+        candidates: []
+      )
+    }
+    defer {
+      _ = IOConnectCallStructMethod(connection, SMCCommand.userClientClose, nil, 0, nil, nil)
+      IOServiceClose(connection)
+    }
+
+    let openCallResult = IOConnectCallStructMethod(
+      connection,
+      SMCCommand.userClientOpen,
+      nil,
+      0,
+      nil,
+      nil
+    )
+    guard openCallResult == KERN_SUCCESS else {
+      return SMCKeyListReport(
+        stage: .userClientOpenFailed,
+        kernReturn: openCallResult,
+        keyCount: 0,
+        scannedCount: 0,
+        hasBclm: false,
+        candidates: []
+      )
+    }
+
+    guard let keyCount = readKeyCount(connection: connection) else {
+      return SMCKeyListReport(
+        stage: .keyCountFailed,
+        kernReturn: KERN_SUCCESS,
+        keyCount: 0,
+        scannedCount: 0,
+        hasBclm: false,
+        candidates: []
+      )
+    }
+
+    let scanLimit = min(maxKeys ?? keyCount, keyCount)
+    var candidates: [String] = []
+    candidates.reserveCapacity(64)
+    var hasBclm = false
+    let keywords = ["BCL", "BFCL", "CHG", "CH0", "CH1", "CHT", "CHWA", "BAT"]
+
+    for index in 0..<scanLimit {
+      guard let key = readKeyAtIndex(connection: connection, index: index) else {
         return SMCKeyListReport(
-            stage: .ok,
-            kernReturn: KERN_SUCCESS,
-            keyCount: keyCount,
-            scannedCount: scanLimit,
-            hasBclm: hasBclm,
-            candidates: trimmedCandidates
+          stage: .keyReadFailed,
+          kernReturn: KERN_SUCCESS,
+          keyCount: keyCount,
+          scannedCount: index,
+          hasBclm: hasBclm,
+          candidates: candidates
         )
+      }
+
+      if key == "BCLM" {
+        hasBclm = true
+      }
+      if keywords.contains(where: { key.contains($0) }) {
+        candidates.append(key)
+      }
     }
 
-    static func readKeyReport(_ keyName: String) -> SMCKeyReadReport {
-        guard let key = try? SMCKey(keyName) else {
-            return SMCKeyReadReport(
-                key: keyName,
-                stage: .invalidKey,
-                kernReturn: KERN_FAILURE,
-                dataSize: 0,
-                dataType: 0,
-                bytes: [],
-                truncated: false
-            )
-        }
+    let trimmedCandidates = candidates.count > 120 ? Array(candidates.prefix(120)) : candidates
+    return SMCKeyListReport(
+      stage: .ok,
+      kernReturn: KERN_SUCCESS,
+      keyCount: keyCount,
+      scannedCount: scanLimit,
+      hasBclm: hasBclm,
+      candidates: trimmedCandidates
+    )
+  }
 
-        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSMC"))
-        guard service != 0 else {
-            return SMCKeyReadReport(
-                key: keyName,
-                stage: .serviceNotFound,
-                kernReturn: kIOReturnNoDevice,
-                dataSize: 0,
-                dataType: 0,
-                bytes: [],
-                truncated: false
-            )
-        }
-        defer {
-            IOObjectRelease(service)
-        }
-
-        var connection: io_connect_t = 0
-        let openResult = IOServiceOpen(service, mach_task_self_, 0, &connection)
-        guard openResult == KERN_SUCCESS else {
-            return SMCKeyReadReport(
-                key: keyName,
-                stage: .serviceOpenFailed,
-                kernReturn: openResult,
-                dataSize: 0,
-                dataType: 0,
-                bytes: [],
-                truncated: false
-            )
-        }
-        defer {
-            _ = IOConnectCallStructMethod(connection, SMCCommand.userClientClose, nil, 0, nil, nil)
-            IOServiceClose(connection)
-        }
-
-        let openCallResult = IOConnectCallStructMethod(
-            connection,
-            SMCCommand.userClientOpen,
-            nil,
-            0,
-            nil,
-            nil
-        )
-        guard openCallResult == KERN_SUCCESS else {
-            return SMCKeyReadReport(
-                key: keyName,
-                stage: .userClientOpenFailed,
-                kernReturn: openCallResult,
-                dataSize: 0,
-                dataType: 0,
-                bytes: [],
-                truncated: false
-            )
-        }
-
-        var keyInfoInput = SMCKeyData()
-        keyInfoInput.key = key.code
-        keyInfoInput.data8 = SMCCommand.getKeyInfo
-
-        var keyInfoOutput = SMCKeyData()
-        var keyInfoOutputSize = MemoryLayout<SMCKeyData>.size
-        let keyInfoResult = IOConnectCallStructMethod(
-            connection,
-            SMCCommand.handleYPCEvent,
-            &keyInfoInput,
-            MemoryLayout<SMCKeyData>.size,
-            &keyInfoOutput,
-            &keyInfoOutputSize
-        )
-        guard keyInfoResult == KERN_SUCCESS else {
-            return SMCKeyReadReport(
-                key: keyName,
-                stage: .keyInfoFailed,
-                kernReturn: keyInfoResult,
-                dataSize: 0,
-                dataType: 0,
-                bytes: [],
-                truncated: false
-            )
-        }
-
-        let dataSize = Int(keyInfoOutput.keyInfo.dataSize)
-        let dataType = keyInfoOutput.keyInfo.dataType
-        guard dataSize > 0 else {
-            return SMCKeyReadReport(
-                key: keyName,
-                stage: .keyInfoInvalid,
-                kernReturn: KERN_SUCCESS,
-                dataSize: 0,
-                dataType: dataType,
-                bytes: [],
-                truncated: false
-            )
-        }
-
-        var readInput = SMCKeyData()
-        readInput.key = key.code
-        readInput.data8 = SMCCommand.readKey
-        readInput.keyInfo.dataSize = UInt32(dataSize)
-
-        var readOutput = SMCKeyData()
-        var readOutputSize = MemoryLayout<SMCKeyData>.size
-        let readResult = IOConnectCallStructMethod(
-            connection,
-            SMCCommand.handleYPCEvent,
-            &readInput,
-            MemoryLayout<SMCKeyData>.size,
-            &readOutput,
-            &readOutputSize
-        )
-        guard readResult == KERN_SUCCESS else {
-            return SMCKeyReadReport(
-                key: keyName,
-                stage: .readFailed,
-                kernReturn: readResult,
-                dataSize: dataSize,
-                dataType: dataType,
-                bytes: [],
-                truncated: false
-            )
-        }
-
-        let maxBytes = min(dataSize, 32)
-        var bytes: [UInt8] = []
-        bytes.reserveCapacity(maxBytes)
-        withUnsafeBytes(of: &readOutput.bytes) { raw in
-            for index in 0..<min(maxBytes, raw.count) {
-                bytes.append(raw[index])
-            }
-        }
-
-        return SMCKeyReadReport(
-            key: keyName,
-            stage: .ok,
-            kernReturn: KERN_SUCCESS,
-            dataSize: dataSize,
-            dataType: dataType,
-            bytes: bytes,
-            truncated: dataSize > 32
-        )
+  static func readKeyReport(_ keyName: String) -> SMCKeyReadReport {
+    guard let key = try? SMCKey(keyName) else {
+      return SMCKeyReadReport(
+        key: keyName,
+        stage: .invalidKey,
+        kernReturn: KERN_FAILURE,
+        dataSize: 0,
+        dataType: 0,
+        bytes: [],
+        truncated: false
+      )
     }
 
-    private static func mapReturnToResult(_ result: kern_return_t) -> SMCWriteCheckResult {
-        switch result {
-        case kIOReturnNotPrivileged, kIOReturnNotPermitted:
-            return .permissionDenied
-        case kIOReturnNotFound:
-            return .keyNotFound
-        case kIOReturnNoDevice:
-            return .smcUnavailable
-        default:
-            return .unknown
-        }
+    let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSMC"))
+    guard service != 0 else {
+      return SMCKeyReadReport(
+        key: keyName,
+        stage: .serviceNotFound,
+        kernReturn: kIOReturnNoDevice,
+        dataSize: 0,
+        dataType: 0,
+        bytes: [],
+        truncated: false
+      )
+    }
+    defer {
+      IOObjectRelease(service)
     }
 
-    private static func readKeyCount(connection: io_connect_t) -> Int? {
-        if let count = readKeyCount(connection: connection, keyName: "#KEY") {
-            return count
-        }
-        if let count = readKeyCount(connection: connection, keyName: "NKEY") {
-            return count
-        }
-        return nil
+    var connection: io_connect_t = 0
+    let openResult = IOServiceOpen(service, mach_task_self_, 0, &connection)
+    guard openResult == KERN_SUCCESS else {
+      return SMCKeyReadReport(
+        key: keyName,
+        stage: .serviceOpenFailed,
+        kernReturn: openResult,
+        dataSize: 0,
+        dataType: 0,
+        bytes: [],
+        truncated: false
+      )
+    }
+    defer {
+      _ = IOConnectCallStructMethod(connection, SMCCommand.userClientClose, nil, 0, nil, nil)
+      IOServiceClose(connection)
     }
 
-    private static func readKeyCount(connection: io_connect_t, keyName: String) -> Int? {
-        guard let key = try? SMCKey(keyName) else {
-            return nil
-        }
-
-        var keyInfoInput = SMCKeyData()
-        keyInfoInput.key = key.code
-        keyInfoInput.data8 = SMCCommand.getKeyInfo
-
-        var keyInfoOutput = SMCKeyData()
-        var keyInfoOutputSize = MemoryLayout<SMCKeyData>.size
-        let keyInfoResult = IOConnectCallStructMethod(
-            connection,
-            SMCCommand.handleYPCEvent,
-            &keyInfoInput,
-            MemoryLayout<SMCKeyData>.size,
-            &keyInfoOutput,
-            &keyInfoOutputSize
-        )
-        guard keyInfoResult == KERN_SUCCESS else {
-            return nil
-        }
-
-        let dataSize = Int(keyInfoOutput.keyInfo.dataSize)
-        guard dataSize >= 4 else {
-            return nil
-        }
-
-        var readInput = SMCKeyData()
-        readInput.key = key.code
-        readInput.data8 = SMCCommand.readKey
-        readInput.keyInfo.dataSize = UInt32(dataSize)
-
-        var readOutput = SMCKeyData()
-        var readOutputSize = MemoryLayout<SMCKeyData>.size
-        let readResult = IOConnectCallStructMethod(
-            connection,
-            SMCCommand.handleYPCEvent,
-            &readInput,
-            MemoryLayout<SMCKeyData>.size,
-            &readOutput,
-            &readOutputSize
-        )
-        guard readResult == KERN_SUCCESS else {
-            return nil
-        }
-
-        var bytes = [UInt8](repeating: 0, count: 4)
-        withUnsafeBytes(of: &readOutput.bytes) { raw in
-            for index in 0..<min(4, raw.count) {
-                bytes[index] = raw[index]
-            }
-        }
-
-        let value =
-            (UInt32(bytes[0]) << 24)
-            | (UInt32(bytes[1]) << 16)
-            | (UInt32(bytes[2]) << 8)
-            | UInt32(bytes[3])
-        return Int(value)
+    let openCallResult = IOConnectCallStructMethod(
+      connection,
+      SMCCommand.userClientOpen,
+      nil,
+      0,
+      nil,
+      nil
+    )
+    guard openCallResult == KERN_SUCCESS else {
+      return SMCKeyReadReport(
+        key: keyName,
+        stage: .userClientOpenFailed,
+        kernReturn: openCallResult,
+        dataSize: 0,
+        dataType: 0,
+        bytes: [],
+        truncated: false
+      )
     }
 
-    private static func readKeyAtIndex(connection: io_connect_t, index: Int) -> String? {
-        var input = SMCKeyData()
-        input.data8 = SMCCommand.getKeyByIndex
-        input.data32 = UInt32(index)
+    var keyInfoInput = SMCKeyData()
+    keyInfoInput.key = key.code
+    keyInfoInput.data8 = SMCCommand.getKeyInfo
 
-        var output = SMCKeyData()
-        var outputSize = MemoryLayout<SMCKeyData>.size
-        let result = IOConnectCallStructMethod(
-            connection,
-            SMCCommand.handleYPCEvent,
-            &input,
-            MemoryLayout<SMCKeyData>.size,
-            &output,
-            &outputSize
-        )
-        guard result == KERN_SUCCESS else {
-            return nil
-        }
-
-        return smcKeyString(from: output.key)
+    var keyInfoOutput = SMCKeyData()
+    var keyInfoOutputSize = MemoryLayout<SMCKeyData>.size
+    let keyInfoResult = IOConnectCallStructMethod(
+      connection,
+      SMCCommand.handleYPCEvent,
+      &keyInfoInput,
+      MemoryLayout<SMCKeyData>.size,
+      &keyInfoOutput,
+      &keyInfoOutputSize
+    )
+    guard keyInfoResult == KERN_SUCCESS else {
+      return SMCKeyReadReport(
+        key: keyName,
+        stage: .keyInfoFailed,
+        kernReturn: keyInfoResult,
+        dataSize: 0,
+        dataType: 0,
+        bytes: [],
+        truncated: false
+      )
     }
 
-    private static func smcKeyString(from code: UInt32) -> String? {
-        let bytes: [UInt8] = [
-            UInt8((code >> 24) & 0xFF),
-            UInt8((code >> 16) & 0xFF),
-            UInt8((code >> 8) & 0xFF),
-            UInt8(code & 0xFF),
-        ]
-        return String(bytes: bytes, encoding: .ascii)
+    let dataSize = Int(keyInfoOutput.keyInfo.dataSize)
+    let dataType = keyInfoOutput.keyInfo.dataType
+    guard dataSize > 0 else {
+      return SMCKeyReadReport(
+        key: keyName,
+        stage: .keyInfoInvalid,
+        kernReturn: KERN_SUCCESS,
+        dataSize: 0,
+        dataType: dataType,
+        bytes: [],
+        truncated: false
+      )
     }
+
+    var readInput = SMCKeyData()
+    readInput.key = key.code
+    readInput.data8 = SMCCommand.readKey
+    readInput.keyInfo.dataSize = UInt32(dataSize)
+
+    var readOutput = SMCKeyData()
+    var readOutputSize = MemoryLayout<SMCKeyData>.size
+    let readResult = IOConnectCallStructMethod(
+      connection,
+      SMCCommand.handleYPCEvent,
+      &readInput,
+      MemoryLayout<SMCKeyData>.size,
+      &readOutput,
+      &readOutputSize
+    )
+    guard readResult == KERN_SUCCESS else {
+      return SMCKeyReadReport(
+        key: keyName,
+        stage: .readFailed,
+        kernReturn: readResult,
+        dataSize: dataSize,
+        dataType: dataType,
+        bytes: [],
+        truncated: false
+      )
+    }
+
+    let maxBytes = min(dataSize, 32)
+    var bytes: [UInt8] = []
+    bytes.reserveCapacity(maxBytes)
+    withUnsafeBytes(of: &readOutput.bytes) { raw in
+      for index in 0..<min(maxBytes, raw.count) {
+        bytes.append(raw[index])
+      }
+    }
+
+    return SMCKeyReadReport(
+      key: keyName,
+      stage: .ok,
+      kernReturn: KERN_SUCCESS,
+      dataSize: dataSize,
+      dataType: dataType,
+      bytes: bytes,
+      truncated: dataSize > 32
+    )
+  }
+
+  private static func mapReturnToResult(_ result: kern_return_t) -> SMCWriteCheckResult {
+    switch result {
+    case kIOReturnNotPrivileged, kIOReturnNotPermitted:
+      return .permissionDenied
+    case kIOReturnNotFound:
+      return .keyNotFound
+    case kIOReturnNoDevice:
+      return .smcUnavailable
+    default:
+      return .unknown
+    }
+  }
+
+  private static func readKeyCount(connection: io_connect_t) -> Int? {
+    if let count = readKeyCount(connection: connection, keyName: "#KEY") {
+      return count
+    }
+    if let count = readKeyCount(connection: connection, keyName: "NKEY") {
+      return count
+    }
+    return nil
+  }
+
+  private static func readKeyCount(connection: io_connect_t, keyName: String) -> Int? {
+    guard let key = try? SMCKey(keyName) else {
+      return nil
+    }
+
+    var keyInfoInput = SMCKeyData()
+    keyInfoInput.key = key.code
+    keyInfoInput.data8 = SMCCommand.getKeyInfo
+
+    var keyInfoOutput = SMCKeyData()
+    var keyInfoOutputSize = MemoryLayout<SMCKeyData>.size
+    let keyInfoResult = IOConnectCallStructMethod(
+      connection,
+      SMCCommand.handleYPCEvent,
+      &keyInfoInput,
+      MemoryLayout<SMCKeyData>.size,
+      &keyInfoOutput,
+      &keyInfoOutputSize
+    )
+    guard keyInfoResult == KERN_SUCCESS else {
+      return nil
+    }
+
+    let dataSize = Int(keyInfoOutput.keyInfo.dataSize)
+    guard dataSize >= 4 else {
+      return nil
+    }
+
+    var readInput = SMCKeyData()
+    readInput.key = key.code
+    readInput.data8 = SMCCommand.readKey
+    readInput.keyInfo.dataSize = UInt32(dataSize)
+
+    var readOutput = SMCKeyData()
+    var readOutputSize = MemoryLayout<SMCKeyData>.size
+    let readResult = IOConnectCallStructMethod(
+      connection,
+      SMCCommand.handleYPCEvent,
+      &readInput,
+      MemoryLayout<SMCKeyData>.size,
+      &readOutput,
+      &readOutputSize
+    )
+    guard readResult == KERN_SUCCESS else {
+      return nil
+    }
+
+    var bytes = [UInt8](repeating: 0, count: 4)
+    withUnsafeBytes(of: &readOutput.bytes) { raw in
+      for index in 0..<min(4, raw.count) {
+        bytes[index] = raw[index]
+      }
+    }
+
+    let value =
+      (UInt32(bytes[0]) << 24)
+      | (UInt32(bytes[1]) << 16)
+      | (UInt32(bytes[2]) << 8)
+      | UInt32(bytes[3])
+    return Int(value)
+  }
+
+  private static func readKeyAtIndex(connection: io_connect_t, index: Int) -> String? {
+    var input = SMCKeyData()
+    input.data8 = SMCCommand.getKeyByIndex
+    input.data32 = UInt32(index)
+
+    var output = SMCKeyData()
+    var outputSize = MemoryLayout<SMCKeyData>.size
+    let result = IOConnectCallStructMethod(
+      connection,
+      SMCCommand.handleYPCEvent,
+      &input,
+      MemoryLayout<SMCKeyData>.size,
+      &output,
+      &outputSize
+    )
+    guard result == KERN_SUCCESS else {
+      return nil
+    }
+
+    return smcKeyString(from: output.key)
+  }
+
+  private static func smcKeyString(from code: UInt32) -> String? {
+    let bytes: [UInt8] = [
+      UInt8((code >> 24) & 0xFF),
+      UInt8((code >> 16) & 0xFF),
+      UInt8((code >> 8) & 0xFF),
+      UInt8(code & 0xFF),
+    ]
+    return String(bytes: bytes, encoding: .ascii)
+  }
 
 }
 
 private struct SMCKeyInfo {
-    let dataSize: Int
-    let dataType: UInt32
+  let dataSize: Int
+  let dataType: UInt32
 }
 
 private enum SMCCommand {
-    static let userClientOpen: UInt32 = 0
-    static let userClientClose: UInt32 = 1
-    static let handleYPCEvent: UInt32 = 2
-    static let readKey: UInt8 = 5
-    static let getKeyInfo: UInt8 = 9
-    static let getKeyByIndex: UInt8 = 8
-    static let writeKey: UInt8 = 6
+  static let userClientOpen: UInt32 = 0
+  static let userClientClose: UInt32 = 1
+  static let handleYPCEvent: UInt32 = 2
+  static let readKey: UInt8 = 5
+  static let getKeyInfo: UInt8 = 9
+  static let getKeyByIndex: UInt8 = 8
+  static let writeKey: UInt8 = 6
 }
 
 private struct SMCKeyDataVersion {
-    var major: UInt8 = 0
-    var minor: UInt8 = 0
-    var build: UInt8 = 0
-    var reserved: UInt8 = 0
-    var release: UInt16 = 0
+  var major: UInt8 = 0
+  var minor: UInt8 = 0
+  var build: UInt8 = 0
+  var reserved: UInt8 = 0
+  var release: UInt16 = 0
 }
 
 private struct SMCKeyDataPLimit {
-    var version: UInt16 = 0
-    var length: UInt16 = 0
-    var cpuPLimit: UInt32 = 0
-    var gpuPLimit: UInt32 = 0
-    var memPLimit: UInt32 = 0
+  var version: UInt16 = 0
+  var length: UInt16 = 0
+  var cpuPLimit: UInt32 = 0
+  var gpuPLimit: UInt32 = 0
+  var memPLimit: UInt32 = 0
 }
 
 private struct SMCKeyInfoData {
-    var dataSize: UInt32 = 0
-    var dataType: UInt32 = 0
-    var dataAttributes: UInt8 = 0
-    var reserved: (UInt8, UInt8, UInt8) = (0, 0, 0)
+  var dataSize: UInt32 = 0
+  var dataType: UInt32 = 0
+  var dataAttributes: UInt8 = 0
+  var reserved: (UInt8, UInt8, UInt8) = (0, 0, 0)
 }
 
 private typealias SMCBytes = (
-    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+  UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+  UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+  UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+  UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
 )
 
 private struct SMCKeyData {
-    var key: UInt32 = 0
-    var vers: SMCKeyDataVersion = SMCKeyDataVersion()
-    var pLimitData: SMCKeyDataPLimit = SMCKeyDataPLimit()
-    var keyInfo: SMCKeyInfoData = SMCKeyInfoData()
-    var result: UInt8 = 0
-    var status: UInt8 = 0
-    var data8: UInt8 = 0
-    var data32: UInt32 = 0
-    var bytes: SMCBytes = (
-        0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0
-    )
+  var key: UInt32 = 0
+  var vers: SMCKeyDataVersion = SMCKeyDataVersion()
+  var pLimitData: SMCKeyDataPLimit = SMCKeyDataPLimit()
+  var keyInfo: SMCKeyInfoData = SMCKeyInfoData()
+  var result: UInt8 = 0
+  var status: UInt8 = 0
+  var data8: UInt8 = 0
+  var data32: UInt32 = 0
+  var bytes: SMCBytes = (
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0
+  )
 }
