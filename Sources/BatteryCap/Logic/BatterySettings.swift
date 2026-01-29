@@ -4,6 +4,8 @@ import Foundation
 struct BatterySettings: Equatable {
   var isLimitControlEnabled: Bool
   var chargeLimit: Int
+  var keepStateOnQuit: Bool
+  var launchAtLoginEnabled: Bool
 }
 
 /// 设置存储协议
@@ -17,6 +19,8 @@ final class UserDefaultsBatterySettingsStore: BatterySettingsStoreProtocol {
   private enum Keys {
     static let isLimitControlEnabled = "BatteryCap.isLimitControlEnabled"
     static let chargeLimit = "BatteryCap.chargeLimit"
+    static let keepStateOnQuit = "BatteryCap.keepStateOnQuit"
+    static let launchAtLoginEnabled = "BatteryCap.launchAtLoginEnabled"
   }
 
   private let userDefaults: UserDefaults
@@ -28,17 +32,25 @@ final class UserDefaultsBatterySettingsStore: BatterySettingsStoreProtocol {
   func load() -> BatterySettings {
     let enabled = userDefaults.object(forKey: Keys.isLimitControlEnabled) as? Bool ?? false
     let limit =
-      userDefaults.object(forKey: Keys.chargeLimit) as? Int ?? BatteryConstants.defaultChargeLimit
+      userDefaults.object(forKey: Keys.chargeLimit) as? Int
+      ?? BatteryConstants.defaultChargeLimit
+    let keepStateOnQuit = userDefaults.object(forKey: Keys.keepStateOnQuit) as? Bool ?? false
+    let launchAtLoginEnabled =
+      userDefaults.object(forKey: Keys.launchAtLoginEnabled) as? Bool ?? false
 
     return BatterySettings(
       isLimitControlEnabled: enabled,
-      chargeLimit: clampLimit(limit)
+      chargeLimit: clampLimit(limit),
+      keepStateOnQuit: keepStateOnQuit,
+      launchAtLoginEnabled: launchAtLoginEnabled
     )
   }
 
   func save(_ settings: BatterySettings) {
     userDefaults.set(settings.isLimitControlEnabled, forKey: Keys.isLimitControlEnabled)
     userDefaults.set(clampLimit(settings.chargeLimit), forKey: Keys.chargeLimit)
+    userDefaults.set(settings.keepStateOnQuit, forKey: Keys.keepStateOnQuit)
+    userDefaults.set(settings.launchAtLoginEnabled, forKey: Keys.launchAtLoginEnabled)
   }
 
   private func clampLimit(_ value: Int) -> Int {

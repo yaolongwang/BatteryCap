@@ -13,11 +13,6 @@ final class SMCHelperSMCClient {
     close()
   }
 
-  func writeChargeLimit(_ value: UInt8) throws {
-    let key = try SMCHelperSMCKey(SMCHelperConstants.chargeLimitKey)
-    try writeBytes([value], to: key)
-  }
-
   func setChargingEnabled(_ enabled: Bool) throws {
     let keySet = try resolveChargingKeySet()
     switch keySet {
@@ -35,151 +30,6 @@ final class SMCHelperSMCClient {
       try writeBytes(bytes, to: key1)
       try writeBytes(bytes, to: key2)
     }
-  }
-
-  static func diagnose(limit: UInt8) -> SMCHelperDiagnosticReport {
-    let keyName = SMCHelperConstants.chargeLimitKey
-    guard let key = try? SMCHelperSMCKey(keyName) else {
-      return SMCHelperDiagnosticReport(
-        status: .invalidKey,
-        stage: .invalidKey,
-        kernReturn: KERN_FAILURE,
-        dataSize: 0,
-        dataType: 0
-      )
-    }
-
-    let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSMC"))
-    guard service != 0 else {
-      return SMCHelperDiagnosticReport(
-        status: .smcUnavailable,
-        stage: .serviceNotFound,
-        kernReturn: kIOReturnNoDevice,
-        dataSize: 0,
-        dataType: 0
-      )
-    }
-    defer {
-      IOObjectRelease(service)
-    }
-
-    var connection: io_connect_t = 0
-    let openResult = IOServiceOpen(service, mach_task_self_, 0, &connection)
-    guard openResult == KERN_SUCCESS else {
-      return SMCHelperDiagnosticReport(
-        status: mapReturnToStatus(openResult),
-        stage: .serviceOpenFailed,
-        kernReturn: openResult,
-        dataSize: 0,
-        dataType: 0
-      )
-    }
-    defer {
-      _ = IOConnectCallStructMethod(
-        connection, SMCHelperCommand.userClientClose, nil, 0, nil, nil
-      )
-      IOServiceClose(connection)
-    }
-
-    let userClientResult = IOConnectCallStructMethod(
-      connection,
-      SMCHelperCommand.userClientOpen,
-      nil,
-      0,
-      nil,
-      nil
-    )
-    guard userClientResult == KERN_SUCCESS else {
-      return SMCHelperDiagnosticReport(
-        status: mapReturnToStatus(userClientResult),
-        stage: .userClientOpenFailed,
-        kernReturn: userClientResult,
-        dataSize: 0,
-        dataType: 0
-      )
-    }
-
-    var keyInfoInput = SMCHelperKeyData()
-    keyInfoInput.key = key.code
-    keyInfoInput.data8 = SMCHelperCommand.getKeyInfo
-    var keyInfoOutput = SMCHelperKeyData()
-    var keyInfoOutputSize = MemoryLayout<SMCHelperKeyData>.size
-    let keyInfoResult = IOConnectCallStructMethod(
-      connection,
-      SMCHelperCommand.handleYPCEvent,
-      &keyInfoInput,
-      MemoryLayout<SMCHelperKeyData>.size,
-      &keyInfoOutput,
-      &keyInfoOutputSize
-    )
-    guard keyInfoResult == KERN_SUCCESS else {
-      return SMCHelperDiagnosticReport(
-        status: mapReturnToStatus(keyInfoResult),
-        stage: .keyInfoFailed,
-        kernReturn: keyInfoResult,
-        dataSize: 0,
-        dataType: 0
-      )
-    }
-
-    let dataSize = Int(keyInfoOutput.keyInfo.dataSize)
-    let dataType = keyInfoOutput.keyInfo.dataType
-    guard dataSize > 0 else {
-      return SMCHelperDiagnosticReport(
-        status: .keyNotFound,
-        stage: .keyInfoInvalid,
-        kernReturn: KERN_SUCCESS,
-        dataSize: 0,
-        dataType: dataType
-      )
-    }
-    guard dataSize == 1 else {
-      return SMCHelperDiagnosticReport(
-        status: .typeMismatch,
-        stage: .typeMismatch,
-        kernReturn: KERN_SUCCESS,
-        dataSize: dataSize,
-        dataType: dataType
-      )
-    }
-
-    var writeInput = SMCHelperKeyData()
-    writeInput.key = key.code
-    writeInput.data8 = SMCHelperCommand.writeKey
-    writeInput.keyInfo.dataSize = UInt32(dataSize)
-    withUnsafeMutableBytes(of: &writeInput.bytes) { bytes in
-      if !bytes.isEmpty {
-        bytes[0] = limit
-      }
-    }
-
-    var writeOutput = SMCHelperKeyData()
-    var writeOutputSize = MemoryLayout<SMCHelperKeyData>.size
-    let writeResult = IOConnectCallStructMethod(
-      connection,
-      SMCHelperCommand.handleYPCEvent,
-      &writeInput,
-      MemoryLayout<SMCHelperKeyData>.size,
-      &writeOutput,
-      &writeOutputSize
-    )
-    guard writeResult == KERN_SUCCESS else {
-      return SMCHelperDiagnosticReport(
-        status: mapReturnToStatus(writeResult),
-        stage: .writeFailed,
-        kernReturn: writeResult,
-        dataSize: dataSize,
-        dataType: dataType
-      )
-    }
-
-    return SMCHelperDiagnosticReport(
-      status: .ok,
-      stage: .ok,
-      kernReturn: KERN_SUCCESS,
-      dataSize: dataSize,
-      dataType: dataType
-    )
   }
 
   private func open() throws {
@@ -599,26 +449,6 @@ enum SMCHelperKeyReadStage: Int32 {
   case keyInfoFailed = 5
   case keyInfoInvalid = 6
   case readFailed = 7
-}
-
-enum SMCHelperDiagnosticStage: Int32 {
-  case ok = 0
-  case invalidKey = 1
-  case serviceNotFound = 2
-  case serviceOpenFailed = 3
-  case userClientOpenFailed = 4
-  case keyInfoFailed = 5
-  case keyInfoInvalid = 6
-  case typeMismatch = 7
-  case writeFailed = 8
-}
-
-struct SMCHelperDiagnosticReport {
-  let status: SMCHelperStatus
-  let stage: SMCHelperDiagnosticStage
-  let kernReturn: kern_return_t
-  let dataSize: Int
-  let dataType: UInt32
 }
 
 extension SMCHelperError {

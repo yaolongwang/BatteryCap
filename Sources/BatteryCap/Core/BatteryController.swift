@@ -71,47 +71,34 @@ struct SMCBatteryController: BatteryControllerProtocol, Sendable {
   }
 
   private func applyModeDirect(_ mode: ChargingMode) throws {
-    guard let strategy = configuration.controlStrategy else {
+    guard let chargingSwitch = configuration.chargingSwitch else {
       throw BatteryError.unsupportedOperation
     }
 
     let client = try SMCClient()
-    switch strategy {
-    case .chargeLimit(let keyDefinition):
-      let limit = clampLimit(for: mode)
-      try client.writeUInt8(UInt8(limit), to: keyDefinition)
-    case .chargingSwitch(let chargingSwitch):
-      let shouldEnable: Bool
-      if case .hold = mode {
-        shouldEnable = false
-      } else {
-        shouldEnable = true
-      }
-      let bytes = shouldEnable ? chargingSwitch.enableBytes : chargingSwitch.disableBytes
-      for keyDefinition in chargingSwitch.keys {
-        try client.writeBytes(bytes, to: keyDefinition)
-      }
+    let shouldEnable: Bool
+    if case .hold = mode {
+      shouldEnable = false
+    } else {
+      shouldEnable = true
+    }
+    let bytes = shouldEnable ? chargingSwitch.enableBytes : chargingSwitch.disableBytes
+    for keyDefinition in chargingSwitch.keys {
+      try client.writeBytes(bytes, to: keyDefinition)
     }
   }
 
   private func applyModeWithHelper(_ mode: ChargingMode) async throws {
-    guard let strategy = configuration.controlStrategy else {
+    guard configuration.chargingSwitch != nil else {
       throw BatteryError.unsupportedOperation
     }
-
-    switch strategy {
-    case .chargeLimit:
-      let limit = clampLimit(for: mode)
-      try await helperClient.setChargeLimit(limit)
-    case .chargingSwitch:
-      let shouldEnable: Bool
-      if case .hold = mode {
-        shouldEnable = false
-      } else {
-        shouldEnable = true
-      }
-      try await helperClient.setChargingEnabled(shouldEnable)
+    let shouldEnable: Bool
+    if case .hold = mode {
+      shouldEnable = false
+    } else {
+      shouldEnable = true
     }
+    try await helperClient.setChargingEnabled(shouldEnable)
   }
 
   private func shouldFallbackToHelper(_ error: Error) -> Bool {

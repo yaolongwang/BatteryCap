@@ -1,12 +1,7 @@
 import Foundation
 
 @objc protocol SMCHelperProtocol {
-  func setChargeLimit(_ limit: Int, reply: @escaping (Int32) -> Void)
   func setChargingEnabled(_ enabled: Bool, reply: @escaping (Int32) -> Void)
-  func diagnoseChargeLimit(
-    _ limit: Int,
-    reply: @escaping (Int32, Int32, Int32, Int32, Int32) -> Void
-  )
   func readKey(
     _ key: String,
     reply: @escaping (Int32, Int32, Int32, Int32, Int32, Int32, Data) -> Void
@@ -19,42 +14,6 @@ final class SMCHelperClient: @unchecked Sendable {
 
   static var isInstalled: Bool {
     FileManager.default.fileExists(atPath: "/Library/PrivilegedHelperTools/\(machServiceName)")
-  }
-
-  func setChargeLimit(_ limit: Int) async throws {
-    try await withCheckedThrowingContinuation {
-      (continuation: CheckedContinuation<Void, Error>) in
-      let gate = ContinuationGate()
-      let connection = NSXPCConnection(
-        machServiceName: Self.machServiceName, options: .privileged)
-      connection.remoteObjectInterface = NSXPCInterface(with: SMCHelperProtocol.self)
-      connection.invalidationHandler = {
-        gate.resume(continuation, .failure(BatteryError.controllerUnavailable))
-      }
-      connection.resume()
-
-      guard
-        let proxy = connection.remoteObjectProxyWithErrorHandler({ _ in
-          gate.resume(continuation, .failure(BatteryError.controllerUnavailable))
-          connection.invalidate()
-        }) as? SMCHelperProtocol
-      else {
-        connection.invalidate()
-        gate.resume(continuation, .failure(BatteryError.controllerUnavailable))
-        return
-      }
-
-      proxy.setChargeLimit(limit) { status in
-        connection.invalidationHandler = nil
-        connection.invalidate()
-        let result = SMCHelperStatus(rawValue: status) ?? .unknown
-        if result == .ok {
-          gate.resume(continuation, .success(()))
-        } else {
-          gate.resume(continuation, .failure(result.error))
-        }
-      }
-    }
   }
 
   func setChargingEnabled(_ enabled: Bool) async throws {
@@ -89,46 +48,6 @@ final class SMCHelperClient: @unchecked Sendable {
         } else {
           gate.resume(continuation, .failure(result.error))
         }
-      }
-    }
-  }
-
-  func diagnoseChargeLimit(_ limit: Int) async throws -> SMCHelperDiagnosticReport {
-    try await withCheckedThrowingContinuation {
-      (continuation: CheckedContinuation<SMCHelperDiagnosticReport, Error>) in
-      let gate = ContinuationGate()
-      let connection = NSXPCConnection(
-        machServiceName: Self.machServiceName, options: .privileged)
-      connection.remoteObjectInterface = NSXPCInterface(with: SMCHelperProtocol.self)
-      connection.invalidationHandler = {
-        gate.resume(continuation, .failure(BatteryError.controllerUnavailable))
-      }
-      connection.resume()
-
-      guard
-        let proxy = connection.remoteObjectProxyWithErrorHandler({ _ in
-          gate.resume(continuation, .failure(BatteryError.controllerUnavailable))
-          connection.invalidate()
-        }) as? SMCHelperProtocol
-      else {
-        connection.invalidate()
-        gate.resume(continuation, .failure(BatteryError.controllerUnavailable))
-        return
-      }
-
-      proxy.diagnoseChargeLimit(limit) { status, stage, kern, dataSize, dataType in
-        connection.invalidationHandler = nil
-        connection.invalidate()
-        let statusEnum = SMCHelperStatus(rawValue: status) ?? .unknown
-        let stageEnum = SMCHelperDiagnosticStage(rawValue: stage) ?? .unknown
-        let report = SMCHelperDiagnosticReport(
-          status: statusEnum,
-          stage: stageEnum,
-          kernReturn: kern,
-          dataSize: dataSize,
-          dataType: dataType
-        )
-        gate.resume(continuation, .success(report))
       }
     }
   }
@@ -202,27 +121,6 @@ enum SMCHelperStatus: Int32, Sendable {
       return .unknown("写入 SMC 失败。")
     }
   }
-}
-
-enum SMCHelperDiagnosticStage: Int32, Sendable {
-  case ok = 0
-  case invalidKey = 1
-  case serviceNotFound = 2
-  case serviceOpenFailed = 3
-  case userClientOpenFailed = 4
-  case keyInfoFailed = 5
-  case keyInfoInvalid = 6
-  case typeMismatch = 7
-  case writeFailed = 8
-  case unknown = 99
-}
-
-struct SMCHelperDiagnosticReport: Sendable {
-  let status: SMCHelperStatus
-  let stage: SMCHelperDiagnosticStage
-  let kernReturn: Int32
-  let dataSize: Int32
-  let dataType: Int32
 }
 
 enum SMCHelperKeyReadStage: Int32, Sendable {

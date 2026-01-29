@@ -97,15 +97,6 @@ final class SMCClient {
     }
   }
 
-  static func checkWriteAccess(_ strategy: SMCChargeControlStrategy) -> SMCWriteCheckResult {
-    switch strategy {
-    case .chargeLimit(let keyDefinition):
-      return checkWriteAccess(keyDefinition)
-    case .chargingSwitch(let chargingSwitch):
-      return checkWriteAccess(chargingSwitch)
-    }
-  }
-
   private func validate(_ keyDefinition: SMCKeyDefinition) throws {
     let keyInfo = try getKeyInfo(for: keyDefinition.key)
     guard keyInfo.dataSize == keyDefinition.dataSize else {
@@ -246,7 +237,6 @@ struct SMCKeyListReport {
   let kernReturn: kern_return_t
   let keyCount: Int
   let scannedCount: Int
-  let hasBclm: Bool
   let candidates: [String]
 }
 
@@ -434,7 +424,6 @@ extension SMCClient {
         kernReturn: kIOReturnNoDevice,
         keyCount: 0,
         scannedCount: 0,
-        hasBclm: false,
         candidates: []
       )
     }
@@ -450,7 +439,6 @@ extension SMCClient {
         kernReturn: openResult,
         keyCount: 0,
         scannedCount: 0,
-        hasBclm: false,
         candidates: []
       )
     }
@@ -473,7 +461,6 @@ extension SMCClient {
         kernReturn: openCallResult,
         keyCount: 0,
         scannedCount: 0,
-        hasBclm: false,
         candidates: []
       )
     }
@@ -484,7 +471,6 @@ extension SMCClient {
         kernReturn: KERN_SUCCESS,
         keyCount: 0,
         scannedCount: 0,
-        hasBclm: false,
         candidates: []
       )
     }
@@ -492,7 +478,6 @@ extension SMCClient {
     let scanLimit = min(maxKeys ?? keyCount, keyCount)
     var candidates: [String] = []
     candidates.reserveCapacity(64)
-    var hasBclm = false
     let keywords = ["BCL", "BFCL", "CHG", "CH0", "CH1", "CHT", "CHWA", "BAT"]
 
     for index in 0..<scanLimit {
@@ -502,14 +487,10 @@ extension SMCClient {
           kernReturn: KERN_SUCCESS,
           keyCount: keyCount,
           scannedCount: index,
-          hasBclm: hasBclm,
           candidates: candidates
         )
       }
 
-      if key == "BCLM" {
-        hasBclm = true
-      }
       if keywords.contains(where: { key.contains($0) }) {
         candidates.append(key)
       }
@@ -521,7 +502,6 @@ extension SMCClient {
       kernReturn: KERN_SUCCESS,
       keyCount: keyCount,
       scannedCount: scanLimit,
-      hasBclm: hasBclm,
       candidates: trimmedCandidates
     )
   }

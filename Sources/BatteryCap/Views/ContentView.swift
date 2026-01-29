@@ -90,6 +90,46 @@ struct ContentView: View {
           }
 
           HStack {
+            Text("开机自启动")
+            Spacer()
+            Toggle(
+              "",
+              isOn: Binding(
+                get: { viewModel.isLaunchAtLoginEnabled },
+                set: { viewModel.updateLaunchAtLoginEnabled($0) }
+              )
+            )
+            .labelsHidden()
+            .toggleStyle(.switch)
+          }
+
+          if let message = viewModel.launchAtLoginMessage {
+            Text(message)
+              .font(.footnote)
+              .foregroundStyle(.secondary)
+          }
+
+          HStack {
+            Text("退出时保持当前状态")
+            Spacer()
+            Toggle(
+              "",
+              isOn: Binding(
+                get: { viewModel.keepStateOnQuit },
+                set: { viewModel.updateKeepStateOnQuit($0) }
+              )
+            )
+            .labelsHidden()
+            .toggleStyle(.switch)
+          }
+
+          if !viewModel.keepStateOnQuit {
+            Text("关闭时将恢复正常充电。")
+              .font(.footnote)
+              .foregroundStyle(.secondary)
+          }
+
+          HStack {
             Button("立即刷新") {
               viewModel.refreshNow()
             }

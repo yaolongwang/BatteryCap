@@ -2,15 +2,6 @@ import Foundation
 
 /// SMC 键集合
 enum SMCKeys {
-  /// 电池最大充电上限键（需确认机型支持）
-  static var batteryChargeLimit: SMCKeyDefinition? {
-    guard let key = try? SMCKey("BCLM") else {
-      return nil
-    }
-    let dataType = SMCDataType(rawValue: "ui8 ")
-    return SMCKeyDefinition(key: key, dataType: dataType, dataSize: 1)
-  }
-
   /// Tahoe 机型充电开关键
   static var chargingSwitchTahoe: SMCChargingSwitch? {
     guard let key = try? SMCKey("CHTE") else {
@@ -38,17 +29,14 @@ enum SMCKeys {
     )
   }
 
-  /// 充电控制候选策略（按优先级排序）
-  static var chargeControlCandidates: [SMCChargeControlStrategy] {
-    var candidates: [SMCChargeControlStrategy] = []
-    if let limit = batteryChargeLimit {
-      candidates.append(.chargeLimit(limit))
-    }
+  /// 充电开关键候选（按优先级排序）
+  static var chargingSwitchCandidates: [SMCChargingSwitch] {
+    var candidates: [SMCChargingSwitch] = []
     if let tahoe = chargingSwitchTahoe {
-      candidates.append(.chargingSwitch(tahoe))
+      candidates.append(tahoe)
     }
     if let legacy = chargingSwitchLegacy {
-      candidates.append(.chargingSwitch(legacy))
+      candidates.append(legacy)
     }
     return candidates
   }

@@ -2,7 +2,6 @@ import Foundation
 
 enum SMCHelperConstants {
   static let machServiceName = "com.batterycap.helper"
-  static let chargeLimitKey = "BCLM"
   static let chargingKeyLegacy1 = "CH0B"
   static let chargingKeyLegacy2 = "CH0C"
   static let chargingKeyTahoe = "CHTE"

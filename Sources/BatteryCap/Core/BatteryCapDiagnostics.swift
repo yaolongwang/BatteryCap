@@ -19,7 +19,9 @@ enum BatteryCapDiagnostics {
     print("进程参数: \(CommandLine.arguments.joined(separator: " "))")
 
     let settings = UserDefaultsBatterySettingsStore().load()
-    print("设置: 电量锁定=\(settings.isLimitControlEnabled), 最高电量=\(settings.chargeLimit)%")
+    print(
+      "设置: 电量锁定=\(settings.isLimitControlEnabled), 最高电量=\(settings.chargeLimit)%, 退出保留=\(settings.keepStateOnQuit)"
+    )
 
     let configuration = SMCConfiguration.load()
     print("SMC 写入开关: \(configuration.allowWrites ? "开启" : "关闭")")
@@ -31,27 +33,19 @@ enum BatteryCapDiagnostics {
       print("安装脚本: 未找到")
     }
 
-    guard let strategy = configuration.controlStrategy else {
+    guard let chargingSwitch = configuration.chargingSwitch else {
       print("SMC 充电控制键: 未找到（无法诊断）")
       print("BatteryCap 诊断结束")
       return
     }
 
-    switch strategy {
-    case .chargeLimit(let keyDefinition):
-      let keyName = keyDefinition.key.rawValue
-      let dataType = keyDefinition.dataType?.rawValue ?? "未知"
-      print("SMC 限充键: \(keyName) / \(dataType) / \(keyDefinition.dataSize) 字节")
-    case .chargingSwitch(let chargingSwitch):
-      let keys = chargingSwitch.keyNames.joined(separator: ", ")
-      print("SMC 充电开关键: \(keys) / \(chargingSwitch.dataSize) 字节")
-    }
+    let keys = chargingSwitch.keyNames.joined(separator: ", ")
+    print("SMC 充电开关键: \(keys) / \(chargingSwitch.dataSize) 字节")
 
     let keyList = SMCClient.keyListReport()
     print("SMC Key 列表: 阶段=\(describe(keyList.stage))")
     print("SMC Key 列表: 返回=\(formatKernReturn(keyList.kernReturn))")
     print("SMC Key 列表: 总数=\(keyList.keyCount), 扫描=\(keyList.scannedCount)")
-    print("SMC Key 列表: 是否包含 BCLM = \(keyList.hasBclm ? "是" : "否")")
     if keyList.candidates.isEmpty {
       print("SMC Key 列表: 候选键=空")
     } else {
@@ -72,95 +66,29 @@ enum BatteryCapDiagnostics {
       }
     }
 
-    let directResult = SMCClient.checkWriteAccess(strategy)
+    let directResult = SMCClient.checkWriteAccess(chargingSwitch)
     print("直接写入检测: \(describe(directResult))")
 
-    switch strategy {
-    case .chargeLimit(let keyDefinition):
-      let directReport = SMCClient.diagnosticReport(
-        keyDefinition, value: UInt8(settings.chargeLimit)
-      )
-      print("直接诊断阶段: \(describe(directReport.stage))")
-      print("直接诊断结果: \(describe(directReport.result))")
-      print("直接诊断返回: \(formatKernReturn(directReport.kernReturn))")
+    print("充电开关键读取:")
+    for key in chargingSwitch.keyNames {
+      let report = SMCClient.readKeyReport(key)
       print(
-        "直接诊断 KeyInfo: size=\(directReport.dataSize), type=\(formatDataType(directReport.dataType))"
+        "  \(key): stage=\(describe(report.stage)), return=\(formatKernReturn(report.kernReturn))"
       )
-      if SMCHelperClient.isInstalled {
-        runHelperWriteTest(limit: settings.chargeLimit)
-        runHelperDiagnostic(limit: settings.chargeLimit)
-      } else {
-        print("Helper 写入检测: 跳过（未安装）")
-        print("Helper 诊断: 跳过（未安装）")
-      }
-    case .chargingSwitch(let chargingSwitch):
-      print("充电开关键读取:")
-      for key in chargingSwitch.keyNames {
-        let report = SMCClient.readKeyReport(key)
-        print(
-          "  \(key): stage=\(describe(report.stage)), return=\(formatKernReturn(report.kernReturn))"
-        )
-        print(
-          "    size=\(report.dataSize), type=\(formatDataType(report.dataType)), value=\(formatBytes(report.bytes, dataType: report.dataType))\(report.truncated ? " (truncated)" : "")"
-        )
-      }
-      if SMCHelperClient.isInstalled {
-        runHelperCandidateReads(keys: chargingSwitch.keyNames)
-        print("Helper 写入检测: 跳过（充电开关键会改变充电状态）")
-        print("Helper 诊断: 跳过（充电开关键会改变充电状态）")
-      } else {
-        print("Helper 写入检测: 跳过（未安装）")
-        print("Helper 诊断: 跳过（未安装）")
-      }
+      print(
+        "    size=\(report.dataSize), type=\(formatDataType(report.dataType)), value=\(formatBytes(report.bytes, dataType: report.dataType))\(report.truncated ? " (truncated)" : "")"
+      )
+    }
+    if SMCHelperClient.isInstalled {
+      runHelperCandidateReads(keys: chargingSwitch.keyNames)
+      print("Helper 写入检测: 跳过（充电开关键会改变充电状态）")
+      print("Helper 诊断: 跳过（充电开关键会改变充电状态）")
+    } else {
+      print("Helper 写入检测: 跳过（未安装）")
+      print("Helper 诊断: 跳过（未安装）")
     }
 
     print("BatteryCap 诊断结束")
-  }
-
-  private static func runHelperWriteTest(limit: Int) {
-    let semaphore = DispatchSemaphore(value: 0)
-    print("Helper 写入检测: 开始（目标值 \(limit)%）")
-    Task {
-      do {
-        try await SMCHelperClient().setChargeLimit(limit)
-        print("Helper 写入检测: 成功")
-      } catch {
-        let message =
-          (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-        print("Helper 写入检测: 失败 - \(message)")
-      }
-      semaphore.signal()
-    }
-
-    if semaphore.wait(timeout: .now() + .seconds(10)) == .timedOut {
-      print("Helper 写入检测: 超时（10 秒）")
-    }
-  }
-
-  private static func runHelperDiagnostic(limit: Int) {
-    let semaphore = DispatchSemaphore(value: 0)
-    print("Helper 诊断: 开始（目标值 \(limit)%）")
-    Task {
-      do {
-        let report = try await SMCHelperClient().diagnoseChargeLimit(limit)
-        print("Helper 诊断状态: \(describe(report.status))")
-        print("Helper 诊断阶段: \(describe(report.stage))")
-        print("Helper 诊断返回: \(formatKernReturn(Int32(report.kernReturn)))")
-        print(
-          "Helper 诊断 KeyInfo: size=\(report.dataSize), type=\(formatDataType(UInt32(bitPattern: report.dataType)))"
-        )
-      } catch {
-        let message =
-          (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-        print("Helper 诊断: 失败 - \(message)")
-        print("Helper 诊断: 如果提示接口不可用，请重新运行 scripts/install-helper.sh")
-      }
-      semaphore.signal()
-    }
-
-    if semaphore.wait(timeout: .now() + .seconds(10)) == .timedOut {
-      print("Helper 诊断: 超时（10 秒）")
-    }
   }
 
   private static func runHelperCandidateReads(keys: [String]) {
@@ -234,31 +162,6 @@ enum BatteryCapDiagnostics {
     }
   }
 
-  private static func describe(_ stage: SMCHelperDiagnosticStage) -> String {
-    switch stage {
-    case .ok:
-      return "成功"
-    case .invalidKey:
-      return "键格式无效"
-    case .serviceNotFound:
-      return "未找到 AppleSMC 服务"
-    case .serviceOpenFailed:
-      return "打开服务失败"
-    case .userClientOpenFailed:
-      return "userClient 打开失败"
-    case .keyInfoFailed:
-      return "读取 KeyInfo 失败"
-    case .keyInfoInvalid:
-      return "KeyInfo 无效"
-    case .typeMismatch:
-      return "类型不匹配"
-    case .writeFailed:
-      return "写入失败"
-    case .unknown:
-      return "未知"
-    }
-  }
-
   private static func describe(_ stage: SMCKeyListStage) -> String {
     switch stage {
     case .ok:
@@ -317,27 +220,6 @@ enum BatteryCapDiagnostics {
       return "KeyInfo 无效"
     case .readFailed:
       return "读取失败"
-    case .unknown:
-      return "未知"
-    }
-  }
-
-  private static func describe(_ status: SMCHelperStatus) -> String {
-    switch status {
-    case .ok:
-      return "成功"
-    case .permissionDenied:
-      return "权限不足"
-    case .keyNotFound:
-      return "键不存在"
-    case .typeMismatch:
-      return "类型不匹配"
-    case .smcUnavailable:
-      return "无法连接到 SMC"
-    case .writeFailed:
-      return "写入失败"
-    case .invalidKey:
-      return "键格式无效"
     case .unknown:
       return "未知"
     }

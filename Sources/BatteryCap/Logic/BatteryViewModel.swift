@@ -9,6 +9,9 @@ final class BatteryViewModel: ObservableObject {
   @Published private(set) var isRefreshing: Bool = false
   @Published var isLimitControlEnabled: Bool
   @Published var chargeLimit: Int
+  @Published var keepStateOnQuit: Bool
+  @Published var isLaunchAtLoginEnabled: Bool
+  @Published private(set) var launchAtLoginMessage: String?
   @Published var errorMessage: String?
   @Published private(set) var smcStatus: SMCWriteStatus
 
@@ -47,6 +50,10 @@ final class BatteryViewModel: ObservableObject {
     let settings = settingsStore.load()
     self.isLimitControlEnabled = settings.isLimitControlEnabled
     self.chargeLimit = settings.chargeLimit
+    self.keepStateOnQuit = settings.keepStateOnQuit
+    let launchState = LaunchAtLoginManager.shared.currentState()
+    self.isLaunchAtLoginEnabled = launchState.isEnabled
+    self.launchAtLoginMessage = launchState.message
     self.smcStatus = SMCConfiguration.load().status
 
     self.monitor.onPowerSourceChange = { [weak self] in
@@ -64,6 +71,7 @@ final class BatteryViewModel: ObservableObject {
   func start() {
     monitor.start()
     startRefreshTimer()
+    refreshLaunchAtLoginState()
     refreshNow()
   }
 
@@ -93,6 +101,23 @@ final class BatteryViewModel: ObservableObject {
     persistSettings()
     refreshSmcStatus()
     applyModeIfNeeded(.normal, force: true)
+  }
+
+  func updateKeepStateOnQuit(_ enabled: Bool) {
+    keepStateOnQuit = enabled
+    persistSettings()
+  }
+
+  func updateLaunchAtLoginEnabled(_ enabled: Bool) {
+    do {
+      let state = try LaunchAtLoginManager.shared.setEnabled(enabled)
+      isLaunchAtLoginEnabled = state.isEnabled
+      launchAtLoginMessage = state.message
+      persistSettings()
+    } catch {
+      refreshLaunchAtLoginState()
+      handle(error)
+    }
   }
 
   func requestSmcWriteAccess() {
@@ -130,7 +155,9 @@ final class BatteryViewModel: ObservableObject {
   private func persistSettings() {
     let settings = BatterySettings(
       isLimitControlEnabled: isLimitControlEnabled,
-      chargeLimit: clampLimit(chargeLimit)
+      chargeLimit: clampLimit(chargeLimit),
+      keepStateOnQuit: keepStateOnQuit,
+      launchAtLoginEnabled: isLaunchAtLoginEnabled
     )
     settingsStore.save(settings)
   }
@@ -174,10 +201,18 @@ final class BatteryViewModel: ObservableObject {
     smcStatus = SMCConfiguration.load().status
   }
 
+  private func refreshLaunchAtLoginState() {
+    let state = LaunchAtLoginManager.shared.currentState()
+    isLaunchAtLoginEnabled = state.isEnabled
+    launchAtLoginMessage = state.message
+  }
+
   private var currentSettings: BatterySettings {
     BatterySettings(
       isLimitControlEnabled: isLimitControlEnabled,
-      chargeLimit: clampLimit(chargeLimit)
+      chargeLimit: clampLimit(chargeLimit),
+      keepStateOnQuit: keepStateOnQuit,
+      launchAtLoginEnabled: isLaunchAtLoginEnabled
     )
   }
 

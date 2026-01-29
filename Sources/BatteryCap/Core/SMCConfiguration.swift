@@ -2,7 +2,7 @@ import Foundation
 
 /// SMC 配置
 struct SMCConfiguration: Sendable {
-  let controlStrategy: SMCChargeControlStrategy?
+  let chargingSwitch: SMCChargingSwitch?
   let allowWrites: Bool
   let status: SMCWriteStatus
 
@@ -12,53 +12,53 @@ struct SMCConfiguration: Sendable {
 
   static func load(userDefaults: UserDefaults = .standard) -> SMCConfiguration {
     let allowWrites = userDefaults.object(forKey: SettingsKeys.allowSmcWrites) as? Bool ?? true
-    let resolved = resolveStrategy()
+    let resolved = resolveChargingSwitch()
     let status = resolveStatus(allowWrites: allowWrites, resolved: resolved)
     return SMCConfiguration(
-      controlStrategy: resolved.strategy, allowWrites: allowWrites, status: status)
+      chargingSwitch: resolved.chargingSwitch, allowWrites: allowWrites, status: status)
   }
 
-  private static func resolveStrategy() -> SMCResolvedStrategy {
-    let candidates = SMCKeys.chargeControlCandidates
+  private static func resolveChargingSwitch() -> SMCResolvedSwitch {
+    let candidates = SMCKeys.chargingSwitchCandidates
     guard !candidates.isEmpty else {
-      return SMCResolvedStrategy(strategy: nil, result: .keyNotFound)
+      return SMCResolvedSwitch(chargingSwitch: nil, result: .keyNotFound)
     }
 
-    var permissionDeniedStrategy: SMCChargeControlStrategy?
+    var permissionDeniedSwitch: SMCChargingSwitch?
     for candidate in candidates {
       let result = SMCClient.checkWriteAccess(candidate)
       switch result {
       case .supported:
-        return SMCResolvedStrategy(strategy: candidate, result: .supported)
+        return SMCResolvedSwitch(chargingSwitch: candidate, result: .supported)
       case .permissionDenied:
-        if permissionDeniedStrategy == nil {
-          permissionDeniedStrategy = candidate
+        if permissionDeniedSwitch == nil {
+          permissionDeniedSwitch = candidate
         }
       case .smcUnavailable:
-        return SMCResolvedStrategy(strategy: nil, result: .smcUnavailable)
+        return SMCResolvedSwitch(chargingSwitch: nil, result: .smcUnavailable)
       case .typeMismatch, .keyNotFound, .unknown:
         continue
       }
     }
 
-    if let permissionDeniedStrategy {
-      return SMCResolvedStrategy(
-        strategy: permissionDeniedStrategy, result: .permissionDenied)
+    if let permissionDeniedSwitch {
+      return SMCResolvedSwitch(
+        chargingSwitch: permissionDeniedSwitch, result: .permissionDenied)
     }
 
-    return SMCResolvedStrategy(strategy: nil, result: .keyNotFound)
+    return SMCResolvedSwitch(chargingSwitch: nil, result: .keyNotFound)
   }
 
   private static func resolveStatus(
     allowWrites: Bool,
-    resolved: SMCResolvedStrategy
+    resolved: SMCResolvedSwitch
   )
     -> SMCWriteStatus
   {
     guard allowWrites else {
       return .disabled("SMC 写入已关闭")
     }
-    guard resolved.strategy != nil else {
+    guard resolved.chargingSwitch != nil else {
       return .disabled("未找到可写的 SMC 键")
     }
 
@@ -88,7 +88,7 @@ private enum SettingsKeys {
   static let allowSmcWrites = "BatteryCap.allowSmcWrites"
 }
 
-private struct SMCResolvedStrategy: Sendable {
-  let strategy: SMCChargeControlStrategy?
+private struct SMCResolvedSwitch: Sendable {
+  let chargingSwitch: SMCChargingSwitch?
   let result: SMCWriteCheckResult
 }

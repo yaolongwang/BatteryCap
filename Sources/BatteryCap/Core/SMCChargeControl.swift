@@ -1,11 +1,5 @@
 import Foundation
 
-/// 充电控制策略
-enum SMCChargeControlStrategy: Sendable {
-  case chargeLimit(SMCKeyDefinition)
-  case chargingSwitch(SMCChargingSwitch)
-}
-
 /// 充电开关键配置
 struct SMCChargingSwitch: Sendable {
   let keys: [SMCKeyDefinition]

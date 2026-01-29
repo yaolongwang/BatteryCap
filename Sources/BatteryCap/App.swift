@@ -14,6 +14,7 @@ struct BatteryCapEntry {
 /// BatteryCap 主应用入口
 /// 使用 MenuBarExtra 作为主场景，提供菜单栏常驻体验
 struct BatteryCapApp: App {
+  @NSApplicationDelegateAdaptor(BatteryCapAppDelegate.self) private var appDelegate
   @StateObject private var viewModel = BatteryViewModel()
 
   var body: some Scene {
