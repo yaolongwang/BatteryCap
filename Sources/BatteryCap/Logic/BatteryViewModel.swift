@@ -44,7 +44,7 @@ final class BatteryViewModel: ObservableObject {
     infoProvider: BatteryInfoProviderProtocol = IOKitBatteryInfoProvider(),
     controller: BatteryControllerProtocol = SMCBatteryController(),
     settingsStore: BatterySettingsStoreProtocol = UserDefaultsBatterySettingsStore(),
-    policy: BatteryPolicy = BatteryPolicy(),
+    policy: BatteryPolicy = BatteryPolicy.defaultPolicy(),
     monitor: BatteryPowerMonitor = BatteryPowerMonitor(),
     privilegeManager: SMCPrivilegeManager = SMCPrivilegeManager()
   ) {
@@ -193,7 +193,10 @@ final class BatteryViewModel: ObservableObject {
     }
 
     let desiredMode = policy.desiredMode(
-      currentCharge: info.chargePercentage, settings: currentSettings)
+      currentCharge: info.chargePercentage,
+      settings: currentSettings,
+      lastAppliedMode: lastAppliedMode
+    )
     applyModeIfNeeded(desiredMode, force: force)
   }
 
