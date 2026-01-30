@@ -4,6 +4,8 @@ import SwiftUI
 /// 电池视图模型
 @MainActor
 final class BatteryViewModel: ObservableObject {
+  // MARK: - Published State
+
   @Published private(set) var batteryInfo: BatteryInfo?
   @Published private(set) var lastUpdated: Date?
   @Published private(set) var isRefreshing: Bool = false
@@ -15,6 +17,8 @@ final class BatteryViewModel: ObservableObject {
   @Published var errorMessage: String?
   @Published private(set) var smcStatus: SMCWriteStatus
 
+  // MARK: - Derived State
+
   var isControlSupported: Bool {
     smcStatus.isEnabled
   }
@@ -22,6 +26,8 @@ final class BatteryViewModel: ObservableObject {
   var canRequestSmcWriteAccess: Bool {
     smcStatus.needsPrivilege && SMCManualInstall.installScriptURL != nil
   }
+
+  // MARK: - Dependencies
 
   nonisolated private let infoProvider: BatteryInfoProviderProtocol
   nonisolated private let controller: BatteryControllerProtocol
@@ -31,6 +37,8 @@ final class BatteryViewModel: ObservableObject {
   private let privilegeManager: SMCPrivilegeManager
   private var lastAppliedMode: ChargingMode?
   private var refreshTimer: Timer?
+
+  // MARK: - Initialization
 
   init(
     infoProvider: BatteryInfoProviderProtocol = IOKitBatteryInfoProvider(),
@@ -68,12 +76,16 @@ final class BatteryViewModel: ObservableObject {
     }
   }
 
+  // MARK: - Lifecycle
+
   func start() {
     monitor.start()
     startRefreshTimer()
     refreshLaunchAtLoginState()
     refreshNow()
   }
+
+  // MARK: - User Actions
 
   func refreshNow() {
     Task { [weak self] in
@@ -135,6 +147,8 @@ final class BatteryViewModel: ObservableObject {
     errorMessage = nil
   }
 
+  // MARK: - Core Logic
+
   private func refresh() async {
     isRefreshing = true
     defer {
@@ -151,6 +165,8 @@ final class BatteryViewModel: ObservableObject {
       handle(error)
     }
   }
+
+  // MARK: - Settings & Control
 
   private func persistSettings() {
     let settings = BatterySettings(
@@ -197,6 +213,8 @@ final class BatteryViewModel: ObservableObject {
     }
   }
 
+  // MARK: - State Refresh
+
   private func refreshSmcStatus() {
     smcStatus = SMCConfiguration.load().status
   }
@@ -215,6 +233,8 @@ final class BatteryViewModel: ObservableObject {
       launchAtLoginEnabled: isLaunchAtLoginEnabled
     )
   }
+
+  // MARK: - Helpers
 
   private func clampLimit(_ value: Int) -> Int {
     min(max(value, BatteryConstants.minChargeLimit), BatteryConstants.maxChargeLimit)
