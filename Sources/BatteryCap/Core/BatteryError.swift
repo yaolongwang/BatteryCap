@@ -26,7 +26,7 @@ enum BatteryError: Error, LocalizedError {
     case .unsupportedOperation:
       return "当前版本未实现该硬件操作。"
     case .controllerUnavailable:
-      return "电池控制器不可用。"
+      return "特权组件不可用，请重新安装写入组件。"
     case .permissionDenied:
       return "权限不足，无法执行该操作。"
     case .smcUnavailable:

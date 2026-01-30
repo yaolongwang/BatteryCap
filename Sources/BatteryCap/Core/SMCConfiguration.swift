@@ -61,6 +61,9 @@ struct SMCConfiguration: Sendable {
     guard resolved.chargingSwitch != nil else {
       return .disabled("未找到可写的 SMC 键")
     }
+    if !SMCHelperClient.isInstalled {
+      return .disabled("需要管理员安装写入组件（运行 scripts/install-helper.sh）")
+    }
 
     switch resolved.result {
     case .smcUnavailable:
@@ -70,16 +73,7 @@ struct SMCConfiguration: Sendable {
     case .typeMismatch:
       return .disabled("SMC 键类型不匹配")
     case .supported, .permissionDenied, .unknown:
-      if SMCHelperClient.isInstalled {
-        return .enabledHelper
-      }
-      if resolved.result == .supported {
-        return .enabledDirect
-      }
-      if resolved.result == .permissionDenied {
-        return .disabled("需要管理员安装写入组件（运行 scripts/install-helper.sh）")
-      }
-      return .disabled("SMC 写入不可用")
+      return .enabledHelper
     }
   }
 }

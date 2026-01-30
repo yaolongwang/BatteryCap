@@ -59,10 +59,6 @@ struct SMCBatteryController: BatteryControllerProtocol, Sendable {
       do {
         try await applyModeWithHelper(mode)
       } catch {
-        if shouldFallbackToDirect(error) {
-          try applyModeDirect(mode)
-          return
-        }
         throw error
       }
     case .disabled:
@@ -107,18 +103,6 @@ struct SMCBatteryController: BatteryControllerProtocol, Sendable {
     }
     switch batteryError {
     case .permissionDenied, .smcWriteFailed:
-      return true
-    default:
-      return false
-    }
-  }
-
-  private func shouldFallbackToDirect(_ error: Error) -> Bool {
-    guard let batteryError = error as? BatteryError else {
-      return false
-    }
-    switch batteryError {
-    case .controllerUnavailable:
       return true
     default:
       return false

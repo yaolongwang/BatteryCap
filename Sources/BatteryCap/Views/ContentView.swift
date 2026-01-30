@@ -4,6 +4,7 @@ import SwiftUI
 /// 主视图：显示电池状态和控制面板
 struct ContentView: View {
     @ObservedObject var viewModel: BatteryViewModel
+    @State private var isSettingsPresented = false
 
     private var chargeText: String {
         guard let info = viewModel.batteryInfo else {
@@ -90,79 +91,29 @@ struct ContentView: View {
                     }
 
                     HStack {
-                        Text("开机自启动")
+                        Button {
+                            isSettingsPresented = true
+                        } label: {
+                            Image(systemName: "gearshape")
+                                .accessibilityLabel("设置")
+                        }
                         Spacer()
-                        Toggle(
-                            "",
-                            isOn: Binding(
-                                get: { viewModel.isLaunchAtLoginEnabled },
-                                set: { viewModel.updateLaunchAtLoginEnabled($0) }
-                            )
-                        )
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                    }
-
-                    if let message = viewModel.launchAtLoginMessage {
-                        Text(message)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    HStack {
-                        Text("退出时保持当前状态")
-                        Spacer()
-                        Toggle(
-                            "",
-                            isOn: Binding(
-                                get: { viewModel.keepStateOnQuit },
-                                set: { viewModel.updateKeepStateOnQuit($0) }
-                            )
-                        )
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                    }
-
-                    if !viewModel.keepStateOnQuit {
-                        Text("关闭时将恢复正常充电。")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    HStack {
                         Button("立即刷新") {
                             viewModel.refreshNow()
                         }
                         .disabled(viewModel.isRefreshing)
-
-                        Button("恢复系统默认") {
-                            viewModel.restoreSystemDefault()
-                        }
-
-                        Button("退出") {
-                            NSApplication.shared.terminate(nil)
-                        }
                     }
                 }
                 .frame(maxWidth: .infinity)
             }
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text("提示：\(viewModel.smcStatus.message)")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-
-                if viewModel.smcStatus.needsPrivilege {
-                    Button("授权写入") {
-                        viewModel.requestSmcWriteAccess()
-                    }
-                    .font(.footnote)
-                    .disabled(!viewModel.canRequestSmcWriteAccess)
-                }
-            }
+            smcHintView
         }
         .padding()
         .frame(width: 320)
+        .popover(isPresented: $isSettingsPresented, arrowEdge: .top) {
+            settingsView
+        }
         .onAppear {
             viewModel.start()
         }
@@ -190,6 +141,94 @@ struct ContentView: View {
                     view.monospacedDigit()
                 }
         }
+    }
+
+    @ViewBuilder
+    private var smcHintView: some View {
+        if let message = viewModel.smcStatus.hintMessage {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("提示：\(message)")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                if viewModel.smcStatus.needsPrivilege {
+                    Button("授权写入") {
+                        viewModel.requestSmcWriteAccess()
+                    }
+                    .font(.footnote)
+                    .disabled(!viewModel.canRequestSmcWriteAccess)
+                }
+            }
+        }
+    }
+
+    private var settingsView: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("设置")
+                .font(.headline)
+
+            HStack {
+                Text("开机自启动")
+                Spacer()
+                Toggle(
+                    "",
+                    isOn: Binding(
+                        get: { viewModel.isLaunchAtLoginEnabled },
+                        set: { viewModel.updateLaunchAtLoginEnabled($0) }
+                    )
+                )
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .focusable(false)
+            }
+
+            if let message = viewModel.launchAtLoginMessage {
+                Text(message)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack {
+                Text("退出时保持当前状态")
+                Spacer()
+                Toggle(
+                    "",
+                    isOn: Binding(
+                        get: { viewModel.keepStateOnQuit },
+                        set: { viewModel.updateKeepStateOnQuit($0) }
+                    )
+                )
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .focusable(false)
+            }
+
+            Text(viewModel.keepStateOnQuit ? "关闭应用后将保持当前充电状态。" : "关闭应用后会恢复系统默认充电。")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+
+            Divider()
+
+            HStack {
+                Button("恢复系统默认") {
+                    viewModel.restoreSystemDefault()
+                }
+                .buttonStyle(.bordered)
+                .focusable(false)
+
+                Spacer()
+
+                Button("退出") {
+                    NSApplication.shared.terminate(nil)
+                }
+                .buttonStyle(.bordered)
+                .focusable(false)
+            }
+        }
+        .padding(16)
+        .frame(width: 300)
+        .background(.regularMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 }
 

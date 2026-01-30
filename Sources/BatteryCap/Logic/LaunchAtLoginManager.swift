@@ -37,7 +37,7 @@ final class LaunchAtLoginManager: Sendable {
     case .notFound:
       return LaunchAtLoginState(
         isEnabled: false,
-        message: "未找到应用。请将 BatteryCap 放入“应用程序”文件夹后再试。"
+        message: "请移到“应用程序”后重试。"
       )
     @unknown default:
       return LaunchAtLoginState(isEnabled: false, message: "开机自启动状态未知。")
