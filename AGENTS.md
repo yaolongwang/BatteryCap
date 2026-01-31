@@ -1,7 +1,7 @@
 # BatteryCap - AI Agent 开发指南
 
 ## 1. 项目概览
-**BatteryCap** 是一个 macOS 菜单栏应用程序（GUI），旨在限制 MacBook 的电池充电上限，保护电池健康。
+**BatteryCap** 是一个 macOS 菜单栏应用程序，通过限制 MacBook 的电池充电上限，保护电池健康。
 它通过与系统的 SMC (System Management Controller) 交互来管理电源流向。
 
 ### 功能清单
@@ -12,25 +12,23 @@
 **形式**: macOS 菜单栏应用 (Menu Bar App)
 
 1.  **图形化控制界面**
-    - **供电旁路开关 (Toggle)**:
-        - **开启**: 锁定当前电量。Mac 完全使用外部电源供电，电池处于“闲置状态”（不充电也不放电）。
-        - **关闭**: 恢复正常行为，电池开始充电直到充满 (100%)。
-    - **充电上限设置 (Slider)**: 设置具体的充电百分比限制（配合开关使用，当达到限制时自动进入旁路模式）。
+    - **电量锁定开关 (Toggle)**:
+        - **开启**: 达到上限后停止充电；低于下限后恢复充电（不强制放电）。
+        - **关闭**: 恢复系统默认充电策略（不再干预）。
+    - **充电上限设置 (Slider)**: 设置具体的充电百分比限制（配合开关使用，当达到限制时自动停充）。
 2.  **状态可视化**
     - 显示当前电池电量百分比。
     - 显示供电状态（电池供电 / 适配器供电）。
     - 显示电池状态（正在充电 / 充电暂停 / 放电中）。
     - 显示电池循环次数。
 3.  **充电控制体验增强（轻量级）**
-    - **阈值滞回**：引入上下限区间，减少频繁切换。
-
+    - 阈值滞回：引入上下限区间，减少频繁切换。
 4.  **设置菜单聚合**
     - 主界面提供“设置”入口，集中管理开机自启动、退出行为、恢复默认与退出。
 
-#### Phase 2: 未来规划 (目前先不做)
-1.  **一键暂停充电**：立即停充并锁定当前电量。
-2.  **滞回区间可调**：在设置中提供阈值滞回区间的可视化调节。
-3.  **MagSafe 指示灯控制**: 充电限制生效时改变指示灯颜色。
+#### Phase 2: 未来规划
+1.  **滞回区间可调**：在设置中提供阈值滞回区间的可视化调节。
+2.  **一键暂停充电**：立即停充并锁定当前电量。
 
 ## 2. 环境与构建命令
 
@@ -39,6 +37,12 @@
 - **平台**: macOS 26+ (Target)
 - **工具链**: Swift Package Manager (SPM)
 
+### 已验证环境
+设备：Mac16,13 / macOS 26.2 (Build 25C56)
+
+- `CHTE` 存在并可读取
+- 通过特权 Helper 写入充电开关路径可用
+
 ### 核心命令
 | 动作 | 命令 | 说明 |
 |--------|---------|------|
@@ -46,7 +50,7 @@
 | **构建 (Release)** | `swift build -c release` | 编译优化后的发布版本 |
 | **运行** | `swift run` | 编译并执行主入口程序 |
 | **运行 (Release)** | `swift run -c release` | |
-| **测试** | `swift test` | *注意：需要在 Package.swift 中添加测试目标* |
+| **测试** | `swift test` | 已包含测试目标 |
 | **单测运行** | `swift test --filter <TestClass>/<testMethod>` | 运行指定的测试用例 |
 | **清理** | `swift package clean` | 清除构建产物 |
 | **更新依赖** | `swift package update` | 更新 SPM 依赖包 |
@@ -92,13 +96,22 @@
 - **集成/Mock**: 由于无法在 CI 或所有机器上测试 SMC 写入，必须创建 `BatteryControllerProtocol` 和 `MockBatteryController` 用于测试。
 - **测试命名**: `testMethodName_Condition_ExpectedResult` (测试方法名_条件_预期结果)。
 
-## 5. 文件结构建议
+## 5. 文件结构
+- `Package.swift`: SPM 配置清单。
+- `scripts/`: 工具脚本（包含 `install-helper.sh`）。
 - `Sources/BatteryCap/`: 源代码目录。
-    - `Main.swift`: 程序入口 (`@main`)。
-    - `Core/`: 底层 SMC/IOKit 封装代码。
-    - `Logic/`: 业务逻辑（阈值判断、守护进程）。
-    - `CLI/`: 参数解析与用户交互。
-- `Tests/`: (待添加) 单元测试目录。
+    - `App.swift`: 程序入口 (`@main`) 与诊断分流。
+    - `Info.plist`: 主应用 Info.plist（链接为可执行内嵌资源）。
+    - `Views/`: 菜单栏 UI 与设置面板。
+    - `Core/`: 底层 SMC/IOKit 封装与诊断。
+    - `Logic/`: 业务逻辑（阈值判断、状态管理）。
+    - `Resources/`: Helper 相关资源。
+- `Subpackages/BatteryCapHelper/`: 特权 Helper 子包。
+    - `Package.swift`: Helper 子包的 SPM 配置。
+    - `Sources/BatteryCapHelper/`: Helper 代码目录。
+        - `main.swift`: Helper 入口。
+        - `Info.plist`: Helper Info.plist。
+- `Tests/`: 单元测试目录。
 
 ## 6. Git 与工作流
 - **提交信息**: 使用 Conventional Commits 规范 (例如: `feat: add SMC reader`, `fix: correct percentage calc`)。
