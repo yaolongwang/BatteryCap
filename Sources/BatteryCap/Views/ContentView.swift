@@ -48,7 +48,7 @@ struct ContentView: View {
       Text("BatteryCap")
         .font(.headline)
 
-      GroupBox("状态") {
+      GroupBox {
         VStack(alignment: .leading, spacing: 8) {
           statusRow(title: "电量", value: chargeText, useMonospacedDigits: true)
           statusRow(title: "供电", value: powerSourceText, useMonospacedDigits: false)
@@ -57,9 +57,14 @@ struct ContentView: View {
           statusRow(title: "更新时间", value: lastUpdatedText, useMonospacedDigits: true)
         }
         .frame(maxWidth: .infinity)
+      } label: {
+        Text("状态")
+          .font(.subheadline)
+          .fontWeight(.semibold)
+          .foregroundStyle(.secondary)
       }
 
-      GroupBox("控制") {
+      GroupBox {
         VStack(alignment: .leading, spacing: 10) {
           HStack {
             Text("电量锁定")
@@ -112,6 +117,11 @@ struct ContentView: View {
           }
         }
         .frame(maxWidth: .infinity)
+      } label: {
+        Text("控制")
+          .font(.subheadline)
+          .fontWeight(.semibold)
+          .foregroundStyle(.secondary)
       }
 
       smcHintView
