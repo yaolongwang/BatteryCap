@@ -1,5 +1,7 @@
 import Foundation
 
+// MARK: - Battery Error
+
 /// 电池相关错误
 enum BatteryError: Error, LocalizedError {
   case powerSourceUnavailable

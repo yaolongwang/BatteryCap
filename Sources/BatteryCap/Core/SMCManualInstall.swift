@@ -1,5 +1,7 @@
 import Foundation
 
+// MARK: - Manual Install
+
 /// 手动安装脚本定位
 enum SMCManualInstall {
   static var installScriptURL: URL? {

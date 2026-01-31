@@ -10,74 +10,34 @@ import Foundation
 
 /// 特权 Helper 客户端
 final class SMCHelperClient: @unchecked Sendable {
+  // MARK: - Constants
+
   static let machServiceName = "com.batterycap.helper"
+
+  // MARK: - Status
 
   static var isInstalled: Bool {
     FileManager.default.fileExists(atPath: "/Library/PrivilegedHelperTools/\(machServiceName)")
   }
 
+  // MARK: - Operations
+
   func setChargingEnabled(_ enabled: Bool) async throws {
-    try await withCheckedThrowingContinuation {
-      (continuation: CheckedContinuation<Void, Error>) in
-      let gate = ContinuationGate()
-      let connection = NSXPCConnection(
-        machServiceName: Self.machServiceName, options: .privileged)
-      connection.remoteObjectInterface = NSXPCInterface(with: SMCHelperProtocol.self)
-      connection.invalidationHandler = {
-        gate.resume(continuation, .failure(BatteryError.controllerUnavailable))
-      }
-      connection.resume()
-
-      guard
-        let proxy = connection.remoteObjectProxyWithErrorHandler({ _ in
-          gate.resume(continuation, .failure(BatteryError.controllerUnavailable))
-          connection.invalidate()
-        }) as? SMCHelperProtocol
-      else {
-        connection.invalidate()
-        gate.resume(continuation, .failure(BatteryError.controllerUnavailable))
-        return
-      }
-
+    try await withHelperProxy { proxy, complete in
       proxy.setChargingEnabled(enabled) { status in
-        connection.invalidationHandler = nil
-        connection.invalidate()
         let result = SMCHelperStatus(rawValue: status) ?? .unknown
         if result == .ok {
-          gate.resume(continuation, .success(()))
+          complete(.success(()))
         } else {
-          gate.resume(continuation, .failure(result.error))
+          complete(.failure(result.error))
         }
       }
     }
   }
 
   func readKey(_ key: String) async throws -> SMCHelperKeyReadReport {
-    try await withCheckedThrowingContinuation {
-      (continuation: CheckedContinuation<SMCHelperKeyReadReport, Error>) in
-      let gate = ContinuationGate()
-      let connection = NSXPCConnection(
-        machServiceName: Self.machServiceName, options: .privileged)
-      connection.remoteObjectInterface = NSXPCInterface(with: SMCHelperProtocol.self)
-      connection.invalidationHandler = {
-        gate.resume(continuation, .failure(BatteryError.controllerUnavailable))
-      }
-      connection.resume()
-
-      guard
-        let proxy = connection.remoteObjectProxyWithErrorHandler({ _ in
-          gate.resume(continuation, .failure(BatteryError.controllerUnavailable))
-          connection.invalidate()
-        }) as? SMCHelperProtocol
-      else {
-        connection.invalidate()
-        gate.resume(continuation, .failure(BatteryError.controllerUnavailable))
-        return
-      }
-
+    try await withHelperProxy { proxy, complete in
       proxy.readKey(key) { stage, kern, dataSize, dataType, truncated, _, bytes in
-        connection.invalidationHandler = nil
-        connection.invalidate()
         let report = SMCHelperKeyReadReport(
           key: key,
           stage: SMCHelperKeyReadStage(rawValue: stage) ?? .unknown,
@@ -87,7 +47,44 @@ final class SMCHelperClient: @unchecked Sendable {
           bytes: bytes,
           truncated: truncated != 0
         )
-        gate.resume(continuation, .success(report))
+        complete(.success(report))
+      }
+    }
+  }
+
+  // MARK: - Connection
+
+  private func withHelperProxy<T: Sendable>(
+    _ body: @escaping (SMCHelperProtocol, @escaping (Result<T, Error>) -> Void) -> Void
+  ) async throws -> T {
+    try await withCheckedThrowingContinuation {
+      (continuation: CheckedContinuation<T, Error>) in
+      let gate = ContinuationGate()
+      let connection = NSXPCConnection(
+        machServiceName: Self.machServiceName,
+        options: .privileged
+      )
+      connection.remoteObjectInterface = NSXPCInterface(with: SMCHelperProtocol.self)
+      connection.invalidationHandler = {
+        gate.resume(continuation, .failure(BatteryError.controllerUnavailable))
+      }
+      connection.resume()
+
+      guard
+        let proxy = connection.remoteObjectProxyWithErrorHandler({ _ in
+          gate.resume(continuation, .failure(BatteryError.controllerUnavailable))
+          connection.invalidate()
+        }) as? SMCHelperProtocol
+      else {
+        connection.invalidate()
+        gate.resume(continuation, .failure(BatteryError.controllerUnavailable))
+        return
+      }
+
+      body(proxy) { result in
+        connection.invalidationHandler = nil
+        connection.invalidate()
+        gate.resume(continuation, result)
       }
     }
   }

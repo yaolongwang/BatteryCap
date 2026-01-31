@@ -1,5 +1,7 @@
 import Foundation
 
+// MARK: - SMC Keys
+
 /// SMC 键集合
 enum SMCKeys {
   /// Tahoe 机型充电开关键

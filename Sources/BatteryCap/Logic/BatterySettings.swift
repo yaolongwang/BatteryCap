@@ -16,6 +16,8 @@ protocol BatterySettingsStoreProtocol {
 
 /// 基于 UserDefaults 的设置存储
 final class UserDefaultsBatterySettingsStore: BatterySettingsStoreProtocol {
+  // MARK: - Keys
+
   private enum Keys {
     static let isLimitControlEnabled = "BatteryCap.isLimitControlEnabled"
     static let chargeLimit = "BatteryCap.chargeLimit"
@@ -23,11 +25,17 @@ final class UserDefaultsBatterySettingsStore: BatterySettingsStoreProtocol {
     static let launchAtLoginEnabled = "BatteryCap.launchAtLoginEnabled"
   }
 
+  // MARK: - Dependencies
+
   private let userDefaults: UserDefaults
+
+  // MARK: - Init
 
   init(userDefaults: UserDefaults = .standard) {
     self.userDefaults = userDefaults
   }
+
+  // MARK: - BatterySettingsStoreProtocol
 
   func load() -> BatterySettings {
     let enabled = userDefaults.object(forKey: Keys.isLimitControlEnabled) as? Bool ?? false
@@ -52,6 +60,8 @@ final class UserDefaultsBatterySettingsStore: BatterySettingsStoreProtocol {
     userDefaults.set(settings.keepStateOnQuit, forKey: Keys.keepStateOnQuit)
     userDefaults.set(settings.launchAtLoginEnabled, forKey: Keys.launchAtLoginEnabled)
   }
+
+  // MARK: - Helpers
 
   private func clampLimit(_ value: Int) -> Int {
     min(max(value, BatteryConstants.minChargeLimit), BatteryConstants.maxChargeLimit)

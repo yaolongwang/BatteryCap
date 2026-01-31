@@ -1,17 +1,20 @@
 import Foundation
 import ServiceManagement
 
+/// 开机自启动状态
 struct LaunchAtLoginState: Sendable, Equatable {
   let isEnabled: Bool
   let message: String?
 }
 
+/// 开机自启动管理
 final class LaunchAtLoginManager: Sendable {
   static let shared = LaunchAtLoginManager()
 
+  // MARK: - Public
+
   func currentState() -> LaunchAtLoginState {
-    let status = SMAppService.mainApp.status
-    return mapStatus(status)
+    mapStatus(SMAppService.mainApp.status)
   }
 
   func setEnabled(_ enabled: Bool) throws -> LaunchAtLoginState {
@@ -22,6 +25,8 @@ final class LaunchAtLoginManager: Sendable {
     }
     return currentState()
   }
+
+  // MARK: - Private
 
   private func mapStatus(_ status: SMAppService.Status) -> LaunchAtLoginState {
     switch status {

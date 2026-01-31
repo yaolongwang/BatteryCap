@@ -1,9 +1,10 @@
 import Foundation
 
+/// 应用退出时的电池恢复逻辑
 enum BatteryTerminationController {
   static func restoreIfNeeded() {
     let settings = UserDefaultsBatterySettingsStore().load()
-    guard settings.keepStateOnQuit == false else {
+    guard !settings.keepStateOnQuit else {
       return
     }
 
@@ -12,6 +13,10 @@ enum BatteryTerminationController {
       return
     }
 
+    applyNormalModeWithTimeout(controller: controller)
+  }
+
+  private static func applyNormalModeWithTimeout(controller: SMCBatteryController) {
     let semaphore = DispatchSemaphore(value: 0)
     Task {
       do {

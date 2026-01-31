@@ -6,17 +6,17 @@ struct SMCConfiguration: Sendable {
   let allowWrites: Bool
   let status: SMCWriteStatus
 
-  var isWritable: Bool {
-    status == .enabledDirect
-  }
+  // MARK: - Factory
 
   static func load(userDefaults: UserDefaults = .standard) -> SMCConfiguration {
-    let allowWrites = userDefaults.object(forKey: SettingsKeys.allowSmcWrites) as? Bool ?? true
+    let allowWrites = userDefaults.object(forKey: DefaultsKeys.allowSmcWrites) as? Bool ?? true
     let resolved = resolveChargingSwitch()
     let status = resolveStatus(allowWrites: allowWrites, resolved: resolved)
     return SMCConfiguration(
       chargingSwitch: resolved.chargingSwitch, allowWrites: allowWrites, status: status)
   }
+
+  // MARK: - Resolution
 
   private static func resolveChargingSwitch() -> SMCResolvedSwitch {
     let candidates = SMCKeys.chargingSwitchCandidates
@@ -73,12 +73,12 @@ struct SMCConfiguration: Sendable {
     case .typeMismatch:
       return .disabled("SMC 键类型不匹配")
     case .supported, .permissionDenied, .unknown:
-      return .enabledHelper
+      return .enabled
     }
   }
 }
 
-private enum SettingsKeys {
+private enum DefaultsKeys {
   static let allowSmcWrites = "BatteryCap.allowSmcWrites"
 }
 

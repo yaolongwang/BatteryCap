@@ -10,9 +10,15 @@ protocol BatteryInfoProviderProtocol: Sendable {
 
 /// 使用 IOKit 读取电池信息
 struct IOKitBatteryInfoProvider: BatteryInfoProviderProtocol, Sendable {
+  typealias PowerSourceDescription = [String: Any]
+
+  // MARK: - BatteryInfoProviderProtocol
+
   func fetchBatteryInfo() async throws -> BatteryInfo {
     try fetchBatteryInfoSync()
   }
+
+  // MARK: - Core
 
   private func fetchBatteryInfoSync() throws -> BatteryInfo {
     guard let powerSourcesInfo = IOPSCopyPowerSourcesInfo()?.takeRetainedValue() else {
@@ -29,7 +35,7 @@ struct IOKitBatteryInfoProvider: BatteryInfoProviderProtocol, Sendable {
     for powerSource in powerSourcesList {
       guard
         let description = IOPSGetPowerSourceDescription(powerSourcesInfo, powerSource)?
-          .takeUnretainedValue() as? [String: Any]
+          .takeUnretainedValue() as? PowerSourceDescription
       else {
         continue
       }
@@ -56,7 +62,10 @@ struct IOKitBatteryInfoProvider: BatteryInfoProviderProtocol, Sendable {
 
       let powerSource = mapPowerSource(from: powerSourceState)
       let chargeState = mapChargeState(
-        isCharging: isCharging, isCharged: isCharged, powerSource: powerSource)
+        isCharging: isCharging,
+        isCharged: isCharged,
+        powerSource: powerSource
+      )
 
       return BatteryInfo(
         chargePercentage: percentage,
@@ -69,7 +78,9 @@ struct IOKitBatteryInfoProvider: BatteryInfoProviderProtocol, Sendable {
     throw BatteryError.batteryNotFound
   }
 
-  private func isInternalBattery(_ description: [String: Any]) -> Bool {
+  // MARK: - Parsing
+
+  private func isInternalBattery(_ description: PowerSourceDescription) -> Bool {
     guard let typeValue = stringValue(for: kIOPSTypeKey, in: description) else {
       return false
     }
@@ -77,7 +88,7 @@ struct IOKitBatteryInfoProvider: BatteryInfoProviderProtocol, Sendable {
     return typeValue == kIOPSInternalBatteryType
   }
 
-  private func intValue(for key: String, in description: [String: Any]) -> Int? {
+  private func intValue(for key: String, in description: PowerSourceDescription) -> Int? {
     if let value = description[key] as? Int {
       return value
     }
@@ -87,7 +98,7 @@ struct IOKitBatteryInfoProvider: BatteryInfoProviderProtocol, Sendable {
     return nil
   }
 
-  private func boolValue(for key: String, in description: [String: Any]) -> Bool? {
+  private func boolValue(for key: String, in description: PowerSourceDescription) -> Bool? {
     if let value = description[key] as? Bool {
       return value
     }
@@ -97,7 +108,7 @@ struct IOKitBatteryInfoProvider: BatteryInfoProviderProtocol, Sendable {
     return nil
   }
 
-  private func stringValue(for key: String, in description: [String: Any]) -> String? {
+  private func stringValue(for key: String, in description: PowerSourceDescription) -> String? {
     if let value = description[key] as? String {
       return value
     }
@@ -106,6 +117,8 @@ struct IOKitBatteryInfoProvider: BatteryInfoProviderProtocol, Sendable {
     }
     return nil
   }
+
+  // MARK: - Mapping
 
   private func mapPowerSource(from state: String?) -> BatteryPowerSource {
     switch state {
@@ -118,9 +131,11 @@ struct IOKitBatteryInfoProvider: BatteryInfoProviderProtocol, Sendable {
     }
   }
 
-  private func mapChargeState(isCharging: Bool, isCharged: Bool, powerSource: BatteryPowerSource)
-    -> BatteryChargeState
-  {
+  private func mapChargeState(
+    isCharging: Bool,
+    isCharged: Bool,
+    powerSource: BatteryPowerSource
+  ) -> BatteryChargeState {
     if isCharging {
       return .charging
     }
@@ -136,6 +151,8 @@ struct IOKitBatteryInfoProvider: BatteryInfoProviderProtocol, Sendable {
       return .unknown
     }
   }
+
+  // MARK: - Registry
 
   private func readCycleCountFromRegistry() -> Int? {
     let service = IOServiceGetMatchingService(

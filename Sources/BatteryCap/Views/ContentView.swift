@@ -100,12 +100,13 @@ struct ContentView: View {
             Button {
               isSettingsPresented = true
             } label: {
-              Image(systemName: "gearshape")
-                .accessibilityLabel("设置")
+              Label("设置", systemImage: "gearshape")
             }
             Spacer()
-            Button("立即刷新") {
+            Button {
               viewModel.refreshNow()
+            } label: {
+              Label("立即刷新", systemImage: "arrow.clockwise")
             }
             .disabled(viewModel.isRefreshing)
           }

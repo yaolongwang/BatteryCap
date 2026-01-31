@@ -1,14 +1,15 @@
 import Foundation
 
+// MARK: - SMC Write Status
+
 /// SMC 写入状态
 enum SMCWriteStatus: Equatable {
-  case enabledDirect
-  case enabledHelper
+  case enabled
   case disabled(String)
 
   var isEnabled: Bool {
     switch self {
-    case .enabledDirect, .enabledHelper:
+    case .enabled:
       return true
     case .disabled:
       return false
@@ -19,16 +20,14 @@ enum SMCWriteStatus: Equatable {
     switch self {
     case .disabled(let reason):
       return reason.contains("管理员") || reason.contains("授权")
-    default:
+    case .enabled:
       return false
     }
   }
 
   var message: String {
     switch self {
-    case .enabledDirect:
-      return "已启用 SMC 写入"
-    case .enabledHelper:
+    case .enabled:
       return "已启用特权写入"
     case .disabled(let reason):
       return reason
@@ -39,7 +38,7 @@ enum SMCWriteStatus: Equatable {
     switch self {
     case .disabled(let reason):
       return reason
-    case .enabledDirect, .enabledHelper:
+    case .enabled:
       return nil
     }
   }

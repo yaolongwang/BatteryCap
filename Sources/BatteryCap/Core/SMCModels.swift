@@ -1,5 +1,7 @@
 import Foundation
 
+// MARK: - SMC Models
+
 /// SMC 键
 struct SMCKey: Equatable, Sendable {
   let rawValue: String

@@ -3,6 +3,8 @@ import Foundation
 import IOKit
 
 enum BatteryCapDiagnostics {
+  // MARK: - Entry
+
   static var shouldRun: Bool {
     CommandLine.arguments.contains("--diagnose")
       || CommandLine.arguments.contains("--smc-diagnose")
@@ -54,12 +56,7 @@ enum BatteryCapDiagnostics {
       print("候选键读取:")
       for key in keyList.candidates {
         let report = SMCClient.readKeyReport(key)
-        print(
-          "  \(key): stage=\(describe(report.stage)), return=\(formatKernReturn(report.kernReturn))"
-        )
-        print(
-          "    size=\(report.dataSize), type=\(formatDataType(report.dataType)), value=\(formatBytes(report.bytes, dataType: report.dataType))\(report.truncated ? " (truncated)" : "")"
-        )
+        printKeyReport(report)
       }
       if SMCHelperClient.isInstalled {
         runHelperCandidateReads(keys: keyList.candidates)
@@ -72,12 +69,7 @@ enum BatteryCapDiagnostics {
     print("充电开关键读取:")
     for key in chargingSwitch.keyNames {
       let report = SMCClient.readKeyReport(key)
-      print(
-        "  \(key): stage=\(describe(report.stage)), return=\(formatKernReturn(report.kernReturn))"
-      )
-      print(
-        "    size=\(report.dataSize), type=\(formatDataType(report.dataType)), value=\(formatBytes(report.bytes, dataType: report.dataType))\(report.truncated ? " (truncated)" : "")"
-      )
+      printKeyReport(report)
     }
     if SMCHelperClient.isInstalled {
       runHelperCandidateReads(keys: chargingSwitch.keyNames)
@@ -91,6 +83,8 @@ enum BatteryCapDiagnostics {
     print("BatteryCap 诊断结束")
   }
 
+  // MARK: - Helper Reads
+
   private static func runHelperCandidateReads(keys: [String]) {
     guard !keys.isEmpty else {
       return
@@ -101,15 +95,7 @@ enum BatteryCapDiagnostics {
       for key in keys {
         do {
           let report = try await SMCHelperClient().readKey(key)
-          print(
-            "  \(key): stage=\(describe(report.stage)), return=\(formatKernReturn(report.kernReturn))"
-          )
-          let dataType = UInt32(bitPattern: report.dataType)
-          let value = formatBytes(Array(report.bytes), dataType: dataType)
-          let suffix = report.truncated ? " (truncated)" : ""
-          print(
-            "    size=\(report.dataSize), type=\(formatDataType(dataType)), value=\(value)\(suffix)"
-          )
+          printHelperKeyReport(report)
         } catch {
           let message =
             (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
@@ -123,6 +109,8 @@ enum BatteryCapDiagnostics {
       print("候选键读取（特权）: 超时（15 秒）")
     }
   }
+
+  // MARK: - Formatting
 
   private static func describe(_ result: SMCWriteCheckResult) -> String {
     switch result {
@@ -138,27 +126,6 @@ enum BatteryCapDiagnostics {
       return "无法连接到 SMC"
     case .unknown:
       return "未知"
-    }
-  }
-
-  private static func describe(_ stage: SMCDiagnosticStage) -> String {
-    switch stage {
-    case .ok:
-      return "成功"
-    case .serviceNotFound:
-      return "未找到 AppleSMC 服务"
-    case .serviceOpenFailed:
-      return "打开服务失败"
-    case .userClientOpenFailed:
-      return "userClient 打开失败"
-    case .keyInfoFailed:
-      return "读取 KeyInfo 失败"
-    case .keyInfoInvalid:
-      return "KeyInfo 无效"
-    case .typeMismatch:
-      return "类型不匹配"
-    case .writeFailed:
-      return "写入失败"
     }
   }
 
@@ -200,6 +167,29 @@ enum BatteryCapDiagnostics {
     case .readFailed:
       return "读取失败"
     }
+  }
+
+  private static func printKeyReport(_ report: SMCKeyReadReport) {
+    print(
+      "  \(report.key): stage=\(describe(report.stage)), return=\(formatKernReturn(report.kernReturn))"
+    )
+    let value = formatBytes(report.bytes, dataType: report.dataType)
+    let suffix = report.truncated ? " (truncated)" : ""
+    print(
+      "    size=\(report.dataSize), type=\(formatDataType(report.dataType)), value=\(value)\(suffix)"
+    )
+  }
+
+  private static func printHelperKeyReport(_ report: SMCHelperKeyReadReport) {
+    print(
+      "  \(report.key): stage=\(describe(report.stage)), return=\(formatKernReturn(report.kernReturn))"
+    )
+    let dataType = UInt32(bitPattern: report.dataType)
+    let value = formatBytes(Array(report.bytes), dataType: dataType)
+    let suffix = report.truncated ? " (truncated)" : ""
+    print(
+      "    size=\(report.dataSize), type=\(formatDataType(dataType)), value=\(value)\(suffix)"
+    )
   }
 
   private static func describe(_ stage: SMCHelperKeyReadStage) -> String {

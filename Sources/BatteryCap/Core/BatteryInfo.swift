@@ -22,7 +22,9 @@ struct BatteryInfo: Equatable {
   let cycleCount: Int?
   let powerSource: BatteryPowerSource
   let chargeState: BatteryChargeState
+}
 
+extension BatteryInfo {
   var powerSourceText: String {
     switch powerSource {
     case .battery:

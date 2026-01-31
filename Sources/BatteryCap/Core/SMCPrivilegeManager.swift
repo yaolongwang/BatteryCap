@@ -2,6 +2,8 @@ import Foundation
 
 /// SMC 特权安装管理
 final class SMCPrivilegeManager {
+  // MARK: - Public
+
   func installHelper() throws {
     guard let scriptURL = SMCManualInstall.installScriptURL else {
       throw BatteryError.unknown("未找到安装脚本，请在项目根目录运行。")
@@ -9,6 +11,8 @@ final class SMCPrivilegeManager {
 
     try runInstallScript(scriptURL)
   }
+
+  // MARK: - Private
 
   private func runInstallScript(_ scriptURL: URL) throws {
     let task = Process()

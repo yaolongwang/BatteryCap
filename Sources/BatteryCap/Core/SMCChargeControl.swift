@@ -1,5 +1,7 @@
 import Foundation
 
+// MARK: - Charging Switch
+
 /// 充电开关键配置
 struct SMCChargingSwitch: Sendable {
   let keys: [SMCKeyDefinition]

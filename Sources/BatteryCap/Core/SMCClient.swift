@@ -3,8 +3,12 @@ import IOKit
 
 /// SMC 客户端（简化写入）
 final class SMCClient {
+  // MARK: - State
+
   private var connection: io_connect_t = 0
   private var isClosed = false
+
+  // MARK: - Lifecycle
 
   init() throws {
     try open()
@@ -14,9 +18,7 @@ final class SMCClient {
     close()
   }
 
-  func writeUInt8(_ value: UInt8, to keyDefinition: SMCKeyDefinition) throws {
-    try writeBytes([value], to: keyDefinition)
-  }
+  // MARK: - Write
 
   func writeBytes(_ bytes: [UInt8], to keyDefinition: SMCKeyDefinition) throws {
     let keyInfo = try getKeyInfo(for: keyDefinition.key)
@@ -47,32 +49,7 @@ final class SMCClient {
     _ = try call(&input)
   }
 
-  static func canWrite(_ keyDefinition: SMCKeyDefinition) -> Bool {
-    checkWriteAccess(keyDefinition) == .supported
-  }
-
-  static func checkWriteAccess(_ keyDefinition: SMCKeyDefinition) -> SMCWriteCheckResult {
-    do {
-      let client = try SMCClient()
-      try client.validate(keyDefinition)
-      return .supported
-    } catch let error as BatteryError {
-      switch error {
-      case .permissionDenied:
-        return .permissionDenied
-      case .smcKeyNotFound:
-        return .keyNotFound
-      case .smcTypeMismatch:
-        return .typeMismatch
-      case .smcUnavailable:
-        return .smcUnavailable
-      default:
-        return .unknown
-      }
-    } catch {
-      return .unknown
-    }
-  }
+  // MARK: - Access Check
 
   static func checkWriteAccess(_ chargingSwitch: SMCChargingSwitch) -> SMCWriteCheckResult {
     do {
@@ -97,6 +74,8 @@ final class SMCClient {
     }
   }
 
+  // MARK: - Private Validation
+
   private func validate(_ keyDefinition: SMCKeyDefinition) throws {
     let keyInfo = try getKeyInfo(for: keyDefinition.key)
     guard keyInfo.dataSize == keyDefinition.dataSize else {
@@ -120,6 +99,8 @@ final class SMCClient {
       throw BatteryError.smcTypeMismatch
     }
   }
+
+  // MARK: - Connection
 
   private func open() throws {
     let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSMC"))
@@ -166,6 +147,8 @@ final class SMCClient {
     }
   }
 
+  // MARK: - Key Info
+
   private func getKeyInfo(for key: SMCKey) throws -> SMCKeyInfo {
     var input = SMCKeyData()
     input.key = key.code
@@ -180,6 +163,8 @@ final class SMCClient {
 
     return SMCKeyInfo(dataSize: dataSize, dataType: output.keyInfo.dataType)
   }
+
+  // MARK: - IO Call
 
   private func call(_ input: inout SMCKeyData) throws -> SMCKeyData {
     var output = SMCKeyData()
@@ -201,6 +186,8 @@ final class SMCClient {
     return output
   }
 
+  // MARK: - Error Mapping
+
   private func mapReturn(_ result: kern_return_t) -> BatteryError {
     switch result {
     case kIOReturnNotPrivileged, kIOReturnNotPermitted:
@@ -211,25 +198,6 @@ final class SMCClient {
       return .smcWriteFailed
     }
   }
-}
-
-struct SMCDiagnosticReport {
-  let result: SMCWriteCheckResult
-  let stage: SMCDiagnosticStage
-  let kernReturn: kern_return_t
-  let dataSize: Int
-  let dataType: UInt32
-}
-
-enum SMCDiagnosticStage: Int32 {
-  case ok = 0
-  case serviceNotFound = 1
-  case serviceOpenFailed = 2
-  case userClientOpenFailed = 3
-  case keyInfoFailed = 4
-  case keyInfoInvalid = 5
-  case typeMismatch = 6
-  case writeFailed = 7
 }
 
 struct SMCKeyListReport {
@@ -271,151 +239,9 @@ enum SMCKeyReadStage: Int32 {
   case readFailed = 7
 }
 
+// MARK: - Diagnostics
+
 extension SMCClient {
-  static func diagnosticReport(_ keyDefinition: SMCKeyDefinition, value: UInt8)
-    -> SMCDiagnosticReport
-  {
-    let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSMC"))
-    guard service != 0 else {
-      return SMCDiagnosticReport(
-        result: .smcUnavailable,
-        stage: .serviceNotFound,
-        kernReturn: kIOReturnNoDevice,
-        dataSize: 0,
-        dataType: 0
-      )
-    }
-    defer {
-      IOObjectRelease(service)
-    }
-
-    var connection: io_connect_t = 0
-    let openResult = IOServiceOpen(service, mach_task_self_, 0, &connection)
-    guard openResult == KERN_SUCCESS else {
-      return SMCDiagnosticReport(
-        result: mapReturnToResult(openResult),
-        stage: .serviceOpenFailed,
-        kernReturn: openResult,
-        dataSize: 0,
-        dataType: 0
-      )
-    }
-    defer {
-      _ = IOConnectCallStructMethod(connection, SMCCommand.userClientClose, nil, 0, nil, nil)
-      IOServiceClose(connection)
-    }
-
-    let openCallResult = IOConnectCallStructMethod(
-      connection,
-      SMCCommand.userClientOpen,
-      nil,
-      0,
-      nil,
-      nil
-    )
-    guard openCallResult == KERN_SUCCESS else {
-      return SMCDiagnosticReport(
-        result: mapReturnToResult(openCallResult),
-        stage: .userClientOpenFailed,
-        kernReturn: openCallResult,
-        dataSize: 0,
-        dataType: 0
-      )
-    }
-
-    var keyInfoInput = SMCKeyData()
-    keyInfoInput.key = keyDefinition.key.code
-    keyInfoInput.data8 = SMCCommand.getKeyInfo
-
-    var keyInfoOutput = SMCKeyData()
-    var keyInfoOutputSize = MemoryLayout<SMCKeyData>.size
-    let keyInfoResult = IOConnectCallStructMethod(
-      connection,
-      SMCCommand.handleYPCEvent,
-      &keyInfoInput,
-      MemoryLayout<SMCKeyData>.size,
-      &keyInfoOutput,
-      &keyInfoOutputSize
-    )
-    guard keyInfoResult == KERN_SUCCESS else {
-      return SMCDiagnosticReport(
-        result: mapReturnToResult(keyInfoResult),
-        stage: .keyInfoFailed,
-        kernReturn: keyInfoResult,
-        dataSize: 0,
-        dataType: 0
-      )
-    }
-
-    let dataSize = Int(keyInfoOutput.keyInfo.dataSize)
-    let dataType = keyInfoOutput.keyInfo.dataType
-    guard dataSize > 0 else {
-      return SMCDiagnosticReport(
-        result: .keyNotFound,
-        stage: .keyInfoInvalid,
-        kernReturn: KERN_SUCCESS,
-        dataSize: 0,
-        dataType: dataType
-      )
-    }
-    guard dataSize == keyDefinition.dataSize else {
-      return SMCDiagnosticReport(
-        result: .typeMismatch,
-        stage: .typeMismatch,
-        kernReturn: KERN_SUCCESS,
-        dataSize: dataSize,
-        dataType: dataType
-      )
-    }
-    if let expectedType = keyDefinition.dataType, expectedType.code != dataType {
-      return SMCDiagnosticReport(
-        result: .typeMismatch,
-        stage: .typeMismatch,
-        kernReturn: KERN_SUCCESS,
-        dataSize: dataSize,
-        dataType: dataType
-      )
-    }
-
-    var writeInput = SMCKeyData()
-    writeInput.key = keyDefinition.key.code
-    writeInput.data8 = SMCCommand.writeKey
-    writeInput.keyInfo.dataSize = UInt32(dataSize)
-    withUnsafeMutableBytes(of: &writeInput.bytes) { bytes in
-      if !bytes.isEmpty {
-        bytes[0] = value
-      }
-    }
-
-    var writeOutput = SMCKeyData()
-    var writeOutputSize = MemoryLayout<SMCKeyData>.size
-    let writeResult = IOConnectCallStructMethod(
-      connection,
-      SMCCommand.handleYPCEvent,
-      &writeInput,
-      MemoryLayout<SMCKeyData>.size,
-      &writeOutput,
-      &writeOutputSize
-    )
-    guard writeResult == KERN_SUCCESS else {
-      return SMCDiagnosticReport(
-        result: mapReturnToResult(writeResult),
-        stage: .writeFailed,
-        kernReturn: writeResult,
-        dataSize: dataSize,
-        dataType: dataType
-      )
-    }
-
-    return SMCDiagnosticReport(
-      result: .supported,
-      stage: .ok,
-      kernReturn: KERN_SUCCESS,
-      dataSize: dataSize,
-      dataType: dataType
-    )
-  }
-
   static func keyListReport(maxKeys: Int? = nil) -> SMCKeyListReport {
     let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSMC"))
     guard service != 0 else {

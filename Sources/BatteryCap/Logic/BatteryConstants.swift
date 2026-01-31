@@ -6,6 +6,6 @@ enum BatteryConstants {
   static let maxChargeLimit = 100
   static let defaultChargeLimit = 80
   static let hysteresisPercent = 1
-  static let refreshIntervalSeconds: UInt64 = 20
-  static let refreshIntervalNanoseconds: UInt64 = refreshIntervalSeconds * 1_000_000_000
+  static let refreshInterval: TimeInterval = 60
+  static let refreshTolerance: TimeInterval = 5
 }

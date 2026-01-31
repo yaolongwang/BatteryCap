@@ -205,13 +205,16 @@ final class BatteryViewModel: ObservableObject {
       return
     }
 
-    lastAppliedMode = mode
-
     Task { [weak self] in
       do {
         try await self?.controller.applyChargingMode(mode)
+        await MainActor.run {
+          self?.lastAppliedMode = mode
+        }
       } catch {
-        self?.handle(error)
+        await MainActor.run {
+          self?.handle(error)
+        }
       }
     }
   }
@@ -255,12 +258,15 @@ final class BatteryViewModel: ObservableObject {
     guard refreshTimer == nil else {
       return
     }
-    let timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+    let timer = Timer.scheduledTimer(
+      withTimeInterval: BatteryConstants.refreshInterval,
+      repeats: true
+    ) { [weak self] _ in
       Task { @MainActor in
         self?.refreshNow()
       }
     }
-    timer.tolerance = 5
+    timer.tolerance = BatteryConstants.refreshTolerance
     refreshTimer = timer
   }
 
