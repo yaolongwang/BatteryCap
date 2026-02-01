@@ -22,9 +22,21 @@ struct BatteryCapApp: App {
   @StateObject private var viewModel = BatteryViewModel()
 
   var body: some Scene {
-    MenuBarExtra("BatteryCap", systemImage: "battery.100") {
+    MenuBarExtra("BatteryCap", systemImage: menuBarIconName) {
       ContentView(viewModel: viewModel)
     }
     .menuBarExtraStyle(.window)
+  }
+
+  private var menuBarIconName: String {
+    let isLocked = viewModel.isLimitControlEnabled
+    switch viewModel.batteryInfo?.chargeState {
+    case .charging:
+      return isLocked ? "bolt.batteryblock.fill" : "bolt.batteryblock"
+    case .discharging:
+      return isLocked ? "minus.plus.batteryblock.fill" : "minus.plus.batteryblock"
+    case .paused, .charged, .unknown, .none:
+      return isLocked ? "batteryblock.fill" : "batteryblock"
+    }
   }
 }
