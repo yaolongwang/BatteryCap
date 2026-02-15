@@ -2,7 +2,7 @@
 # 功能：开发态服务入口，支持 install/uninstall/purge-config/full-uninstall 子命令。
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # 实际执行脚本：Sources/BatteryCap/Resources/batterycap-service.sh
 RESOURCE_SCRIPT="$ROOT_DIR/Sources/BatteryCap/Resources/batterycap-service.sh"
 

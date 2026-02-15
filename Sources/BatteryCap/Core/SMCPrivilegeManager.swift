@@ -25,10 +25,12 @@ final class SMCPrivilegeManager {
     task.standardError = stderrPipe
     let quotedPath = shellQuote(scriptURL.path)
     let quotedArguments = arguments.map { shellQuote($0) }.joined(separator: " ")
-    let command = quotedArguments.isEmpty
+    let command =
+      quotedArguments.isEmpty
       ? "/bin/bash \(quotedPath)"
       : "/bin/bash \(quotedPath) \(quotedArguments)"
-    let escapedCommand = command
+    let escapedCommand =
+      command
       .replacingOccurrences(of: "\\", with: "\\\\")
       .replacingOccurrences(of: "\"", with: "\\\"")
     task.arguments = [
@@ -38,12 +40,16 @@ final class SMCPrivilegeManager {
     try task.run()
     task.waitUntilExit()
     if task.terminationStatus != 0 {
-      let stdout = String(data: stdoutPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-      let stderr = String(data: stderrPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-      let scriptOutput = [stdout.trimmingCharacters(in: .whitespacesAndNewlines),
-                          stderr.trimmingCharacters(in: .whitespacesAndNewlines)]
-        .filter { !$0.isEmpty }
-        .joined(separator: "\n")
+      let stdout =
+        String(data: stdoutPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+      let stderr =
+        String(data: stderrPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+      let scriptOutput = [
+        stdout.trimmingCharacters(in: .whitespacesAndNewlines),
+        stderr.trimmingCharacters(in: .whitespacesAndNewlines),
+      ]
+      .filter { !$0.isEmpty }
+      .joined(separator: "\n")
 
       if scriptOutput.localizedCaseInsensitiveContains("User canceled") {
         throw BatteryError.permissionDenied

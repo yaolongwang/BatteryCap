@@ -12,7 +12,9 @@ final class BatteryConstantsTests: XCTestCase {
   }
 
   func testChargeLimitSliderRange_UsesConfiguredBounds() {
-    XCTAssertEqual(BatteryConstants.chargeLimitSliderRange.lowerBound, Double(BatteryConstants.minChargeLimit))
-    XCTAssertEqual(BatteryConstants.chargeLimitSliderRange.upperBound, Double(BatteryConstants.maxChargeLimit))
+    XCTAssertEqual(
+      BatteryConstants.chargeLimitSliderRange.lowerBound, Double(BatteryConstants.minChargeLimit))
+    XCTAssertEqual(
+      BatteryConstants.chargeLimitSliderRange.upperBound, Double(BatteryConstants.maxChargeLimit))
   }
 }

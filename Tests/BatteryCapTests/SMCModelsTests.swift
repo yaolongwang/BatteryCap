@@ -6,7 +6,7 @@ final class SMCModelsTests: XCTestCase {
   func testSMCKey_ValidRawValue_ProducesExpectedCode() throws {
     let key = try SMCKey("CHTE")
     XCTAssertEqual(key.rawValue, "CHTE")
-    XCTAssertEqual(key.code, 0x43485445)
+    XCTAssertEqual(key.code, 0x4348_5445)
   }
 
   func testSMCKey_InvalidRawValue_ThrowsSmcKeyInvalid() {
@@ -27,7 +27,7 @@ final class SMCModelsTests: XCTestCase {
   func testSMCDataType_ValidRawValue_ProducesExpectedCode() {
     let dataType = SMCDataType(rawValue: "ui32")
     XCTAssertEqual(dataType?.rawValue, "ui32")
-    XCTAssertEqual(dataType?.code, 0x75693332)
+    XCTAssertEqual(dataType?.code, 0x7569_3332)
   }
 
   func testSMCDataType_InvalidRawValue_ReturnsNil() {

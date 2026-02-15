@@ -7,6 +7,13 @@ PLIST_DEST="/Library/LaunchDaemons/${LAUNCH_LABEL}.plist"
 BIN_DEST="/Library/PrivilegedHelperTools/${LAUNCH_LABEL}"
 PREFERENCES_DOMAIN="com.batterycap.app"
 SWIFT_TOOL="swift"
+SELF_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+INSTALL_BUNDLE_MODE=0
+INSTALL_ONLY=0
+INSTALL_HELPER_DIR=""
+INSTALL_BUILD_DIR=""
+INSTALL_HELPER_EXEC=""
+INSTALL_PLIST_SOURCE=""
 
 log() {
   echo "[BatteryCap] $*"
@@ -15,6 +22,10 @@ log() {
 fatal() {
   echo "[BatteryCap] 错误：$*" >&2
   exit 1
+}
+
+warn() {
+  echo "[BatteryCap] 警告：$*" >&2
 }
 
 clear_quarantine_if_present() {
@@ -46,7 +57,7 @@ EOF
 
 ensure_root() {
   if [[ "$(id -u)" -ne 0 ]]; then
-    exec /usr/bin/sudo "$0" "$@"
+    exec /usr/bin/sudo "$SELF_PATH" "$@"
   fi
 }
 
@@ -63,14 +74,43 @@ resolve_target_user() {
   echo "$target_user"
 }
 
+is_safe_user_home_path() {
+  local user_home="$1"
+  [[ -n "$user_home" ]] || return 1
+  case "$user_home" in
+    "/"|"/Users"|"/var"|"/private"|"/private/var")
+      return 1
+      ;;
+  esac
+  return 0
+}
+
+resolve_user_home() {
+  local target_user="$1"
+  local user_home
+
+  user_home="$(cd ~"$target_user" 2>/dev/null && pwd)" || {
+    warn "未能定位用户目录：$target_user"
+    return 1
+  }
+
+  if [[ ! -d "$user_home" ]]; then
+    warn "用户目录不存在：$user_home"
+    return 1
+  fi
+
+  if ! is_safe_user_home_path "$user_home"; then
+    warn "用户目录路径不安全，跳过：$user_home"
+    return 1
+  fi
+
+  echo "$user_home"
+}
+
 purge_user_preferences() {
   local target_user user_home pref_plist pref_lock
   target_user="$(resolve_target_user)" || return 0
-  user_home="$(eval echo "~${target_user}")"
-  if [[ -z "$user_home" || ! -d "$user_home" ]]; then
-    log "未能定位用户目录：$target_user"
-    return 0
-  fi
+  user_home="$(resolve_user_home "$target_user")" || return 0
   pref_plist="${user_home}/Library/Preferences/${PREFERENCES_DOMAIN}.plist"
   pref_lock="${pref_plist}.lockfile"
   rm -f "$pref_plist" "$pref_lock"
@@ -80,7 +120,7 @@ purge_user_preferences() {
 remove_app_bundle() {
   local target_user user_home app_path
   target_user="$(resolve_target_user)" || return 0
-  user_home="$(eval echo "~${target_user}")"
+  user_home="$(resolve_user_home "$target_user")" || return 0
   /usr/bin/sudo -u "$target_user" /usr/bin/osascript -e 'tell application "BatteryCap" to quit' 2>/dev/null || true
   for app_path in "/Applications/BatteryCap.app" "${user_home}/Applications/BatteryCap.app"; do
     if [[ -d "$app_path" ]]; then
@@ -95,7 +135,7 @@ remove_app_bundle() {
 disable_app_controls_for_uninstall() {
   local target_user user_home app_path app_exec
   target_user="$(resolve_target_user)" || return 0
-  user_home="$(eval echo "~${target_user}")"
+  user_home="$(resolve_user_home "$target_user")" || return 0
 
   /usr/bin/sudo -u "$target_user" /usr/bin/defaults write "$PREFERENCES_DOMAIN" BatteryCap.isLimitControlEnabled -bool false || true
   /usr/bin/sudo -u "$target_user" /usr/bin/defaults write "$PREFERENCES_DOMAIN" BatteryCap.launchAtLoginEnabled -bool false || true
@@ -120,99 +160,146 @@ uninstall_helper_core() {
   log "Helper removed"
 }
 
-install_helper() {
-  local script_dir bundle_mode install_only root_dir helper_dir build_dir helper_exec plist_source
-  script_dir="$(cd "$(dirname "$0")" && pwd)"
-  bundle_mode=0
-  install_only=0
+install_helper_resolve_context() {
+  local script_dir="$1"
+  INSTALL_BUNDLE_MODE=0
+  INSTALL_ONLY=0
+  INSTALL_HELPER_DIR=""
+  INSTALL_BUILD_DIR=""
+  INSTALL_HELPER_EXEC=""
+  INSTALL_PLIST_SOURCE=""
 
   if [[ "$script_dir" == *".app/Contents/Resources"* ]]; then
-    bundle_mode=1
+    INSTALL_BUNDLE_MODE=1
   fi
 
-  if [[ "$bundle_mode" -eq 1 ]]; then
-    helper_exec="${script_dir}/BatteryCapHelper"
-    if [[ ! -f "$helper_exec" && -f "${script_dir}/../MacOS/BatteryCapHelper" ]]; then
-      helper_exec="${script_dir}/../MacOS/BatteryCapHelper"
+  if [[ "$INSTALL_BUNDLE_MODE" -eq 1 ]]; then
+    INSTALL_HELPER_EXEC="${script_dir}/BatteryCapHelper"
+    if [[ ! -f "$INSTALL_HELPER_EXEC" && -f "${script_dir}/../MacOS/BatteryCapHelper" ]]; then
+      INSTALL_HELPER_EXEC="${script_dir}/../MacOS/BatteryCapHelper"
     fi
-    plist_source="${script_dir}/com.batterycap.helper.plist"
-  else
-    root_dir="$(cd "${script_dir}/../../.." && pwd)"
-    helper_dir="${root_dir}/Subpackages/BatteryCapHelper"
-    build_dir="${helper_dir}/.build"
-    helper_exec="${build_dir}/release/BatteryCapHelper"
-    plist_source="${root_dir}/Sources/BatteryCap/Resources/com.batterycap.helper.plist"
+    INSTALL_PLIST_SOURCE="${script_dir}/com.batterycap.helper.plist"
+    return
   fi
 
-  shift || true
-  if [[ "$bundle_mode" -eq 0 ]]; then
-    while [[ "${1-}" =~ ^-- ]]; do
-      case "$1" in
-        --install-only)
-          install_only=1
-          shift
-          ;;
-        --build-dir)
-          build_dir="$2"
-          helper_exec="$build_dir/release/BatteryCapHelper"
-          shift 2
-          ;;
-        *)
-          fatal "未知 install 参数：$1"
-          ;;
-      esac
-    done
+  local root_dir
+  root_dir="$(cd "${script_dir}/../../.." && pwd)"
+  INSTALL_HELPER_DIR="${root_dir}/Subpackages/BatteryCapHelper"
+  INSTALL_BUILD_DIR="${INSTALL_HELPER_DIR}/.build"
+  INSTALL_HELPER_EXEC="${INSTALL_BUILD_DIR}/release/BatteryCapHelper"
+  INSTALL_PLIST_SOURCE="${root_dir}/Sources/BatteryCap/Resources/com.batterycap.helper.plist"
+}
+
+install_helper_parse_arguments() {
+  if [[ "$INSTALL_BUNDLE_MODE" -eq 1 ]]; then
+    return
   fi
 
-  if [[ ! -f "$plist_source" ]]; then
-    fatal "缺少 helper plist：$plist_source"
+  while [[ "${1-}" =~ ^-- ]]; do
+    case "$1" in
+      --install-only)
+        INSTALL_ONLY=1
+        shift
+        ;;
+      --build-dir)
+        if [[ -z "${2-}" ]]; then
+          fatal "参数 --build-dir 缺少目录值"
+        fi
+        INSTALL_BUILD_DIR="$2"
+        INSTALL_HELPER_EXEC="$INSTALL_BUILD_DIR/release/BatteryCapHelper"
+        shift 2
+        ;;
+      *)
+        fatal "未知 install 参数：$1"
+        ;;
+    esac
+  done
+
+  if [[ "$#" -gt 0 ]]; then
+    fatal "install 不支持位置参数：$*"
   fi
-  if ! /usr/bin/plutil -lint "$plist_source" >/dev/null 2>&1; then
-    fatal "helper plist 校验失败：$plist_source"
+}
+
+install_helper_validate_context() {
+  if [[ "$INSTALL_BUNDLE_MODE" -ne 0 && "$INSTALL_BUNDLE_MODE" -ne 1 ]]; then
+    fatal "安装上下文无效：bundle_mode=$INSTALL_BUNDLE_MODE"
   fi
-  if [[ "$bundle_mode" -eq 0 ]] && ! command -v "$SWIFT_TOOL" >/dev/null 2>&1; then
+  if [[ -z "$INSTALL_HELPER_EXEC" || -z "$INSTALL_PLIST_SOURCE" ]]; then
+    fatal "安装上下文不完整：缺少 helper 可执行文件或 plist 路径"
+  fi
+  if [[ "$INSTALL_BUNDLE_MODE" -eq 0 && ( -z "$INSTALL_HELPER_DIR" || -z "$INSTALL_BUILD_DIR" ) ]]; then
+    fatal "安装上下文不完整：缺少 Helper 构建目录"
+  fi
+}
+
+install_helper_validate_inputs() {
+  if [[ ! -f "$INSTALL_PLIST_SOURCE" ]]; then
+    fatal "缺少 helper plist：$INSTALL_PLIST_SOURCE"
+  fi
+  if ! /usr/bin/plutil -lint "$INSTALL_PLIST_SOURCE" >/dev/null 2>&1; then
+    fatal "helper plist 校验失败：$INSTALL_PLIST_SOURCE"
+  fi
+  if [[ "$INSTALL_BUNDLE_MODE" -eq 0 ]] && ! command -v "$SWIFT_TOOL" >/dev/null 2>&1; then
     fatal "未找到 Swift 工具链，请先安装 Xcode 或 Command Line Tools。"
   fi
+}
 
-  if [[ "$(id -u)" -eq 0 && "$bundle_mode" -eq 0 && "$install_only" -ne 1 ]]; then
+install_helper_validate_invocation() {
+  if [[ "$(id -u)" -eq 0 && "$INSTALL_BUNDLE_MODE" -eq 0 && "$INSTALL_ONLY" -ne 1 ]]; then
     fatal "请在非 root 用户下运行脚本，root 仅用于安装阶段。"
   fi
+}
 
-  if [[ "$(id -u)" -ne 0 ]]; then
-    if [[ "$bundle_mode" -eq 0 ]]; then
-      build_dir="$helper_dir/.build-user"
-      helper_exec="$build_dir/release/BatteryCapHelper"
-      ( cd "$helper_dir" && "$SWIFT_TOOL" build -c release --scratch-path "$build_dir" )
-      log "构建完成：$helper_exec"
-      exec /usr/bin/sudo "$0" install --install-only --build-dir "$build_dir"
-    fi
-    exec /usr/bin/sudo "$0" install "$@"
+install_helper_prepare_non_root() {
+  if [[ "$(id -u)" -eq 0 ]]; then
+    return
   fi
 
-  if [[ "$bundle_mode" -eq 0 && "$install_only" -ne 1 ]]; then
-    ( cd "$helper_dir" && "$SWIFT_TOOL" build -c release --scratch-path "$build_dir" )
-    log "构建完成：$helper_exec"
+  if [[ "$INSTALL_BUNDLE_MODE" -eq 0 ]]; then
+    INSTALL_BUILD_DIR="$INSTALL_HELPER_DIR/.build-user"
+    INSTALL_HELPER_EXEC="$INSTALL_BUILD_DIR/release/BatteryCapHelper"
+    ( cd "$INSTALL_HELPER_DIR" && "$SWIFT_TOOL" build -c release --scratch-path "$INSTALL_BUILD_DIR" )
+    log "构建完成：$INSTALL_HELPER_EXEC"
+    exec /usr/bin/sudo "$SELF_PATH" install --install-only --build-dir "$INSTALL_BUILD_DIR"
   fi
 
-  if [[ ! -f "$helper_exec" ]]; then
-    if [[ "$bundle_mode" -eq 1 ]]; then
-      fatal "未找到内置 Helper：$helper_exec"
-    fi
-    fatal "未找到 Helper 可执行文件：$helper_exec"
-  fi
+  exec /usr/bin/sudo "$SELF_PATH" install "$@"
+}
 
+install_helper_build_if_needed() {
+  if [[ "$INSTALL_BUNDLE_MODE" -eq 0 && "$INSTALL_ONLY" -ne 1 ]]; then
+    ( cd "$INSTALL_HELPER_DIR" && "$SWIFT_TOOL" build -c release --scratch-path "$INSTALL_BUILD_DIR" )
+    log "构建完成：$INSTALL_HELPER_EXEC"
+  fi
+}
+
+install_helper_validate_binary() {
+  if [[ -f "$INSTALL_HELPER_EXEC" ]]; then
+    return
+  fi
+  if [[ "$INSTALL_BUNDLE_MODE" -eq 1 ]]; then
+    fatal "未找到内置 Helper：$INSTALL_HELPER_EXEC"
+  fi
+  fatal "未找到 Helper 可执行文件：$INSTALL_HELPER_EXEC"
+}
+
+install_helper_install_files() {
   mkdir -p /Library/PrivilegedHelperTools /Library/LaunchDaemons
-  install -m 755 -o root -g wheel "$helper_exec" "$BIN_DEST"
-  install -m 644 -o root -g wheel "$plist_source" "$PLIST_DEST"
+  install -m 755 -o root -g wheel "$INSTALL_HELPER_EXEC" "$BIN_DEST"
+  install -m 644 -o root -g wheel "$INSTALL_PLIST_SOURCE" "$PLIST_DEST"
   clear_quarantine_if_present "$BIN_DEST"
   clear_quarantine_if_present "$PLIST_DEST"
   log "已安装 Helper：$BIN_DEST"
   log "已安装 LaunchDaemon：$PLIST_DEST"
+}
 
-  if [[ -n "${SUDO_USER-}" && "$bundle_mode" -eq 0 ]]; then
-    chown -R "$SUDO_USER":staff "$build_dir" 2>/dev/null || true
+install_helper_restore_build_owner() {
+  if [[ -n "${SUDO_USER-}" && "$INSTALL_BUNDLE_MODE" -eq 0 ]]; then
+    chown -R "$SUDO_USER":staff "$INSTALL_BUILD_DIR" 2>/dev/null || true
   fi
+}
 
+install_helper_bootstrap_service() {
   launchctl bootout system "$PLIST_DEST" 2>/dev/null || true
   local bootstrap_output
   if ! bootstrap_output="$(launchctl bootstrap system "$PLIST_DEST" 2>&1)"; then
@@ -222,8 +309,30 @@ install_helper() {
       fatal "bootstrap 失败：$bootstrap_output"
     fi
   fi
-  launchctl enable system/"$LAUNCH_LABEL"
-  launchctl kickstart -k system/"$LAUNCH_LABEL" || true
+  if ! launchctl enable system/"$LAUNCH_LABEL"; then
+    warn "enable 服务失败：system/$LAUNCH_LABEL"
+  fi
+  if ! launchctl kickstart -k system/"$LAUNCH_LABEL"; then
+    warn "kickstart 服务失败：system/$LAUNCH_LABEL"
+  fi
+}
+
+install_helper() {
+  local script_dir
+  script_dir="$(cd "$(dirname "$0")" && pwd)"
+  install_helper_resolve_context "$script_dir"
+
+  shift || true
+  install_helper_parse_arguments "$@"
+  install_helper_validate_context
+  install_helper_validate_inputs
+  install_helper_validate_invocation
+  install_helper_prepare_non_root "$@"
+  install_helper_build_if_needed
+  install_helper_validate_binary
+  install_helper_install_files
+  install_helper_restore_build_owner
+  install_helper_bootstrap_service
   log "Helper installed"
 }
 

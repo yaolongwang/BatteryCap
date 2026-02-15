@@ -80,7 +80,8 @@ final class BatteryViewModelTests: XCTestCase {
   }
 
   func testRefreshNow_InfoFetchFailure_SetsErrorMessage() async {
-    let infoProvider = MockBatteryInfoProvider(result: .failure(BatteryError.invalidPowerSourceData))
+    let infoProvider = MockBatteryInfoProvider(
+      result: .failure(BatteryError.invalidPowerSourceData))
     let controller = MockBatteryController()
     let settingsStore = MockBatterySettingsStore(initial: defaultSettings)
     let viewModel = makeViewModel(

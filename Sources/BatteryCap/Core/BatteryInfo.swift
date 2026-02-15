@@ -34,8 +34,8 @@ extension BatteryInfo {
   }
 }
 
-private extension BatteryPowerSource {
-  var descriptionText: String {
+extension BatteryPowerSource {
+  fileprivate var descriptionText: String {
     switch self {
     case .battery:
       return "电池供电"
@@ -47,8 +47,8 @@ private extension BatteryPowerSource {
   }
 }
 
-private extension BatteryChargeState {
-  var descriptionText: String {
+extension BatteryChargeState {
+  fileprivate var descriptionText: String {
     switch self {
     case .charging:
       return "充电中"

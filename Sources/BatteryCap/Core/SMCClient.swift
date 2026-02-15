@@ -21,13 +21,7 @@ final class SMCClient {
   // MARK: - Write
 
   func writeBytes(_ bytes: [UInt8], to keyDefinition: SMCKeyDefinition) throws {
-    let keyInfo = try getKeyInfo(for: keyDefinition.key)
-    guard keyInfo.dataSize == keyDefinition.dataSize else {
-      throw BatteryError.smcTypeMismatch
-    }
-    if let expectedType = keyDefinition.dataType, expectedType.code != keyInfo.dataType {
-      throw BatteryError.smcTypeMismatch
-    }
+    let keyInfo = try validatedKeyInfo(for: keyDefinition)
     guard bytes.count == keyDefinition.dataSize else {
       throw BatteryError.smcTypeMismatch
     }
@@ -77,6 +71,10 @@ final class SMCClient {
   // MARK: - Private Validation
 
   private func validate(_ keyDefinition: SMCKeyDefinition) throws {
+    _ = try validatedKeyInfo(for: keyDefinition)
+  }
+
+  private func validatedKeyInfo(for keyDefinition: SMCKeyDefinition) throws -> SMCKeyInfo {
     let keyInfo = try getKeyInfo(for: keyDefinition.key)
     guard keyInfo.dataSize == keyDefinition.dataSize else {
       throw BatteryError.smcTypeMismatch
@@ -84,6 +82,7 @@ final class SMCClient {
     if let expectedType = keyDefinition.dataType, expectedType.code != keyInfo.dataType {
       throw BatteryError.smcTypeMismatch
     }
+    return keyInfo
   }
 
   private func validate(_ chargingSwitch: SMCChargingSwitch) throws {
@@ -246,15 +245,9 @@ enum SMCKeyReadStage: Int32 {
 
 extension SMCClient {
   static func keyListReport(maxKeys: Int? = nil) -> SMCKeyListReport {
-    switch withDiagnosticConnection({ connection in
+    let result = withDiagnosticConnection { connection in
       guard let keyCount = readKeyCount(connection: connection) else {
-        return SMCKeyListReport(
-          stage: .keyCountFailed,
-          kernReturn: KERN_SUCCESS,
-          keyCount: 0,
-          scannedCount: 0,
-          candidates: []
-        )
+        return makeKeyListReport(stage: .keyCountFailed)
       }
 
       let scanLimit = min(maxKeys ?? keyCount, keyCount)
@@ -263,9 +256,8 @@ extension SMCClient {
 
       for index in 0..<scanLimit {
         guard let key = readKeyAtIndex(connection: connection, index: index) else {
-          return SMCKeyListReport(
+          return makeKeyListReport(
             stage: .keyReadFailed,
-            kernReturn: KERN_SUCCESS,
             keyCount: keyCount,
             scannedCount: index,
             candidates: candidates
@@ -278,85 +270,42 @@ extension SMCClient {
       }
 
       let trimmedCandidates = candidates.count > 120 ? Array(candidates.prefix(120)) : candidates
-      return SMCKeyListReport(
+      return makeKeyListReport(
         stage: .ok,
-        kernReturn: KERN_SUCCESS,
         keyCount: keyCount,
         scannedCount: scanLimit,
         candidates: trimmedCandidates
       )
-    }) {
-    case .success(let report):
-      return report
-    case .serviceNotFound:
-      return SMCKeyListReport(
-        stage: .serviceNotFound,
-        kernReturn: kIOReturnNoDevice,
-        keyCount: 0,
-        scannedCount: 0,
-        candidates: []
-      )
-    case .serviceOpenFailed(let openResult):
-      return SMCKeyListReport(
-        stage: .serviceOpenFailed,
-        kernReturn: openResult,
-        keyCount: 0,
-        scannedCount: 0,
-        candidates: []
-      )
-    case .userClientOpenFailed(let openCallResult):
-      return SMCKeyListReport(
-        stage: .userClientOpenFailed,
-        kernReturn: openCallResult,
-        keyCount: 0,
-        scannedCount: 0,
-        candidates: []
-      )
     }
+    return makeKeyListReport(from: result)
   }
 
   static func readKeyReport(_ keyName: String) -> SMCKeyReadReport {
     guard let key = try? SMCKey(keyName) else {
-      return SMCKeyReadReport(
-        key: keyName,
-        stage: .invalidKey,
-        kernReturn: KERN_FAILURE,
-        dataSize: 0,
-        dataType: 0,
-        bytes: [],
-        truncated: false
-      )
+      return makeKeyReadReport(key: keyName, stage: .invalidKey, kernReturn: KERN_FAILURE)
     }
 
-    switch withDiagnosticConnection({ connection in
+    let result = withDiagnosticConnection { connection in
       var keyInfoInput = SMCKeyData()
       keyInfoInput.key = key.code
       keyInfoInput.data8 = SMCCommand.getKeyInfo
 
       let keyInfoCall = call(connection: connection, input: &keyInfoInput)
       guard keyInfoCall.result == KERN_SUCCESS else {
-        return SMCKeyReadReport(
+        return makeKeyReadReport(
           key: keyName,
           stage: .keyInfoFailed,
-          kernReturn: keyInfoCall.result,
-          dataSize: 0,
-          dataType: 0,
-          bytes: [],
-          truncated: false
+          kernReturn: keyInfoCall.result
         )
       }
 
       let dataSize = Int(keyInfoCall.output.keyInfo.dataSize)
       let dataType = keyInfoCall.output.keyInfo.dataType
       guard dataSize > 0 else {
-        return SMCKeyReadReport(
+        return makeKeyReadReport(
           key: keyName,
           stage: .keyInfoInvalid,
-          kernReturn: KERN_SUCCESS,
-          dataSize: 0,
-          dataType: dataType,
-          bytes: [],
-          truncated: false
+          dataType: dataType
         )
       }
 
@@ -367,14 +316,12 @@ extension SMCClient {
 
       let readCall = call(connection: connection, input: &readInput)
       guard readCall.result == KERN_SUCCESS else {
-        return SMCKeyReadReport(
+        return makeKeyReadReport(
           key: keyName,
           stage: .readFailed,
           kernReturn: readCall.result,
           dataSize: dataSize,
-          dataType: dataType,
-          bytes: [],
-          truncated: false
+          dataType: dataType
         )
       }
 
@@ -382,48 +329,82 @@ extension SMCClient {
       var bytesSource = readCall.output.bytes
       let bytes = extractBytes(from: &bytesSource, count: maxBytes)
 
-      return SMCKeyReadReport(
+      return makeKeyReadReport(
         key: keyName,
         stage: .ok,
-        kernReturn: KERN_SUCCESS,
         dataSize: dataSize,
         dataType: dataType,
         bytes: bytes,
         truncated: dataSize > 32
       )
-    }) {
+    }
+    return makeKeyReadReport(key: keyName, from: result)
+  }
+
+  private static func makeKeyListReport(
+    stage: SMCKeyListStage,
+    kernReturn: kern_return_t = KERN_SUCCESS,
+    keyCount: Int = 0,
+    scannedCount: Int = 0,
+    candidates: [String] = []
+  ) -> SMCKeyListReport {
+    SMCKeyListReport(
+      stage: stage,
+      kernReturn: kernReturn,
+      keyCount: keyCount,
+      scannedCount: scannedCount,
+      candidates: candidates
+    )
+  }
+
+  private static func makeKeyListReport(
+    from result: SMCDiagnosticConnectionResult<SMCKeyListReport>
+  ) -> SMCKeyListReport {
+    switch result {
     case .success(let report):
       return report
     case .serviceNotFound:
-      return SMCKeyReadReport(
-        key: keyName,
-        stage: .serviceNotFound,
-        kernReturn: kIOReturnNoDevice,
-        dataSize: 0,
-        dataType: 0,
-        bytes: [],
-        truncated: false
-      )
+      return makeKeyListReport(stage: .serviceNotFound, kernReturn: kIOReturnNoDevice)
     case .serviceOpenFailed(let openResult):
-      return SMCKeyReadReport(
-        key: keyName,
-        stage: .serviceOpenFailed,
-        kernReturn: openResult,
-        dataSize: 0,
-        dataType: 0,
-        bytes: [],
-        truncated: false
-      )
+      return makeKeyListReport(stage: .serviceOpenFailed, kernReturn: openResult)
     case .userClientOpenFailed(let openCallResult):
-      return SMCKeyReadReport(
-        key: keyName,
-        stage: .userClientOpenFailed,
-        kernReturn: openCallResult,
-        dataSize: 0,
-        dataType: 0,
-        bytes: [],
-        truncated: false
-      )
+      return makeKeyListReport(stage: .userClientOpenFailed, kernReturn: openCallResult)
+    }
+  }
+
+  private static func makeKeyReadReport(
+    key: String,
+    stage: SMCKeyReadStage,
+    kernReturn: kern_return_t = KERN_SUCCESS,
+    dataSize: Int = 0,
+    dataType: UInt32 = 0,
+    bytes: [UInt8] = [],
+    truncated: Bool = false
+  ) -> SMCKeyReadReport {
+    SMCKeyReadReport(
+      key: key,
+      stage: stage,
+      kernReturn: kernReturn,
+      dataSize: dataSize,
+      dataType: dataType,
+      bytes: bytes,
+      truncated: truncated
+    )
+  }
+
+  private static func makeKeyReadReport(
+    key: String,
+    from result: SMCDiagnosticConnectionResult<SMCKeyReadReport>
+  ) -> SMCKeyReadReport {
+    switch result {
+    case .success(let report):
+      return report
+    case .serviceNotFound:
+      return makeKeyReadReport(key: key, stage: .serviceNotFound, kernReturn: kIOReturnNoDevice)
+    case .serviceOpenFailed(let openResult):
+      return makeKeyReadReport(key: key, stage: .serviceOpenFailed, kernReturn: openResult)
+    case .userClientOpenFailed(let openCallResult):
+      return makeKeyReadReport(key: key, stage: .userClientOpenFailed, kernReturn: openCallResult)
     }
   }
 

@@ -61,12 +61,6 @@ struct SMCConfiguration: Sendable {
     guard allowWrites else {
       return .disabled(StatusMessage.writesDisabled)
     }
-    guard resolved.chargingSwitch != nil else {
-      return .disabled(StatusMessage.noWritableKey)
-    }
-    if !SMCHelperClient.isInstalled {
-      return .disabled(StatusMessage.helperRequired)
-    }
 
     switch resolved.result {
     case .smcUnavailable:
@@ -76,6 +70,12 @@ struct SMCConfiguration: Sendable {
     case .typeMismatch:
       return .disabled(StatusMessage.typeMismatch)
     case .supported, .permissionDenied, .unknown:
+      guard resolved.chargingSwitch != nil else {
+        return .disabled(StatusMessage.noWritableKey)
+      }
+      if !SMCHelperClient.isInstalled {
+        return .disabled(StatusMessage.helperRequired)
+      }
       return .enabled
     }
   }

@@ -88,11 +88,7 @@ enum BatteryCapDiagnostics {
 
     let joined = keyList.candidates.joined(separator: ", ")
     print("SMC Key 列表: 候选键=\(joined)")
-    print("候选键读取:")
-    for key in keyList.candidates {
-      let report = SMCClient.readKeyReport(key)
-      printKeyReport(report)
-    }
+    printKeyReports(title: "候选键读取:", keys: keyList.candidates)
     if helperInstalled {
       runHelperCandidateReads(keys: keyList.candidates)
     }
@@ -105,19 +101,20 @@ enum BatteryCapDiagnostics {
     let directResult = SMCClient.checkWriteAccess(chargingSwitch)
     print("直接写入检测: \(directResult.descriptionText)")
 
-    print("充电开关键读取:")
-    for key in chargingSwitch.keyNames {
-      let report = SMCClient.readKeyReport(key)
-      printKeyReport(report)
-    }
+    printKeyReports(title: "充电开关键读取:", keys: chargingSwitch.keyNames)
 
     if helperInstalled {
       runHelperCandidateReads(keys: chargingSwitch.keyNames)
-      print("Helper 写入检测: 跳过（充电开关键会改变充电状态）")
-      print("Helper 诊断: 跳过（充电开关键会改变充电状态）")
+      printHelperDiagnosticsSkipped(reason: "充电开关键会改变充电状态")
     } else {
-      print("Helper 写入检测: 跳过（未安装）")
-      print("Helper 诊断: 跳过（未安装）")
+      printHelperDiagnosticsSkipped(reason: "未安装")
+    }
+  }
+
+  private static func printKeyReports(title: String, keys: [String]) {
+    print(title)
+    for key in keys {
+      printKeyReport(SMCClient.readKeyReport(key))
     }
   }
 
@@ -152,26 +149,53 @@ enum BatteryCapDiagnostics {
   // MARK: - Formatting
 
   private static func printKeyReport(_ report: SMCKeyReadReport) {
-    print(
-      "  \(report.key): stage=\(report.stage.descriptionText), return=\(formatKernReturn(report.kernReturn))"
-    )
-    let value = formatBytes(report.bytes)
-    let suffix = report.truncated ? " (truncated)" : ""
-    print(
-      "    size=\(report.dataSize), type=\(formatDataType(report.dataType)), value=\(value)\(suffix)"
+    printReadReport(
+      key: report.key,
+      stageDescription: report.stage.descriptionText,
+      kernReturn: report.kernReturn,
+      dataSize: report.dataSize,
+      dataType: report.dataType,
+      bytes: report.bytes,
+      truncated: report.truncated
     )
   }
 
   private static func printHelperKeyReport(_ report: SMCHelperKeyReadReport) {
-    print(
-      "  \(report.key): stage=\(report.stage.descriptionText), return=\(formatKernReturn(report.kernReturn))"
-    )
     let dataType = UInt32(bitPattern: report.dataType)
-    let value = formatBytes(Array(report.bytes))
-    let suffix = report.truncated ? " (truncated)" : ""
-    print(
-      "    size=\(report.dataSize), type=\(formatDataType(dataType)), value=\(value)\(suffix)"
+    let bytes = Array(report.bytes)
+    printReadReport(
+      key: report.key,
+      stageDescription: report.stage.descriptionText,
+      kernReturn: report.kernReturn,
+      dataSize: Int(report.dataSize),
+      dataType: dataType,
+      bytes: bytes,
+      truncated: report.truncated
     )
+  }
+
+  private static func printReadReport(
+    key: String,
+    stageDescription: String,
+    kernReturn: Int32,
+    dataSize: Int,
+    dataType: UInt32,
+    bytes: [UInt8],
+    truncated: Bool
+  ) {
+    print(
+      "  \(key): stage=\(stageDescription), return=\(formatKernReturn(kernReturn))"
+    )
+    let value = formatBytes(bytes)
+    let suffix = truncated ? " (truncated)" : ""
+    print(
+      "    size=\(dataSize), type=\(formatDataType(dataType)), value=\(value)\(suffix)"
+    )
+  }
+
+  private static func printHelperDiagnosticsSkipped(reason: String) {
+    print("Helper 写入检测: 跳过（\(reason)）")
+    print("Helper 诊断: 跳过（\(reason)）")
   }
 
   private static func formatDataType(_ code: UInt32) -> String {
@@ -284,8 +308,33 @@ private enum HardwareInfo {
   }
 }
 
-private extension SMCWriteCheckResult {
-  var descriptionText: String {
+private enum KeyReadStageDescription {
+  static func commonDescription(rawValue: Int32) -> String? {
+    switch rawValue {
+    case SMCKeyReadStage.ok.rawValue:
+      return "成功"
+    case SMCKeyReadStage.invalidKey.rawValue:
+      return "键格式无效"
+    case SMCKeyReadStage.serviceNotFound.rawValue:
+      return "未找到 AppleSMC 服务"
+    case SMCKeyReadStage.serviceOpenFailed.rawValue:
+      return "打开服务失败"
+    case SMCKeyReadStage.userClientOpenFailed.rawValue:
+      return "userClient 打开失败"
+    case SMCKeyReadStage.keyInfoFailed.rawValue:
+      return "读取 KeyInfo 失败"
+    case SMCKeyReadStage.keyInfoInvalid.rawValue:
+      return "KeyInfo 无效"
+    case SMCKeyReadStage.readFailed.rawValue:
+      return "读取失败"
+    default:
+      return nil
+    }
+  }
+}
+
+extension SMCWriteCheckResult {
+  fileprivate var descriptionText: String {
     switch self {
     case .supported:
       return "支持（可写）"
@@ -303,8 +352,8 @@ private extension SMCWriteCheckResult {
   }
 }
 
-private extension SMCKeyListStage {
-  var descriptionText: String {
+extension SMCKeyListStage {
+  fileprivate var descriptionText: String {
     switch self {
     case .ok:
       return "成功"
@@ -324,50 +373,17 @@ private extension SMCKeyListStage {
   }
 }
 
-private extension SMCKeyReadStage {
-  var descriptionText: String {
-    switch self {
-    case .ok:
-      return "成功"
-    case .invalidKey:
-      return "键格式无效"
-    case .serviceNotFound:
-      return "未找到 AppleSMC 服务"
-    case .serviceOpenFailed:
-      return "打开服务失败"
-    case .userClientOpenFailed:
-      return "userClient 打开失败"
-    case .keyInfoFailed:
-      return "读取 KeyInfo 失败"
-    case .keyInfoInvalid:
-      return "KeyInfo 无效"
-    case .readFailed:
-      return "读取失败"
-    }
+extension SMCKeyReadStage {
+  fileprivate var descriptionText: String {
+    KeyReadStageDescription.commonDescription(rawValue: rawValue) ?? "未知"
   }
 }
 
-private extension SMCHelperKeyReadStage {
-  var descriptionText: String {
-    switch self {
-    case .ok:
-      return "成功"
-    case .invalidKey:
-      return "键格式无效"
-    case .serviceNotFound:
-      return "未找到 AppleSMC 服务"
-    case .serviceOpenFailed:
-      return "打开服务失败"
-    case .userClientOpenFailed:
-      return "userClient 打开失败"
-    case .keyInfoFailed:
-      return "读取 KeyInfo 失败"
-    case .keyInfoInvalid:
-      return "KeyInfo 无效"
-    case .readFailed:
-      return "读取失败"
-    case .unknown:
+extension SMCHelperKeyReadStage {
+  fileprivate var descriptionText: String {
+    if self == .unknown {
       return "未知"
     }
+    return KeyReadStageDescription.commonDescription(rawValue: rawValue) ?? "未知"
   }
 }

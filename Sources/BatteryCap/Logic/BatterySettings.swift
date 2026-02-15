@@ -56,7 +56,8 @@ final class UserDefaultsBatterySettingsStore: BatterySettingsStoreProtocol {
 
   func save(_ settings: BatterySettings) {
     userDefaults.set(settings.isLimitControlEnabled, forKey: Keys.isLimitControlEnabled)
-    userDefaults.set(BatteryConstants.clampChargeLimit(settings.chargeLimit), forKey: Keys.chargeLimit)
+    userDefaults.set(
+      BatteryConstants.clampChargeLimit(settings.chargeLimit), forKey: Keys.chargeLimit)
     userDefaults.set(settings.keepStateOnQuit, forKey: Keys.keepStateOnQuit)
     userDefaults.set(settings.launchAtLoginEnabled, forKey: Keys.launchAtLoginEnabled)
   }

@@ -109,21 +109,18 @@ final class BatteryViewModel: ObservableObject {
 
   func updateLimitControlEnabled(_ enabled: Bool) {
     isLimitControlEnabled = enabled
-    persistSettingsAndRefreshSmcStatus()
-    applyControlIfNeeded(force: true)
+    persistAndApplyControl(force: true)
   }
 
   func updateChargeLimit(_ newValue: Int) {
     chargeLimit = BatteryConstants.clampChargeLimit(newValue)
-    persistSettingsAndRefreshSmcStatus()
-    applyControlIfNeeded(force: false)
+    persistAndApplyControl(force: false)
   }
 
   func restoreSystemDefault() {
     isLimitControlEnabled = false
     chargeLimit = BatteryConstants.maxChargeLimit
-    persistSettingsAndRefreshSmcStatus()
-    applyModeIfNeeded(.normal, force: true)
+    persistAndApplyMode(.normal, force: true)
   }
 
   func updateKeepStateOnQuit(_ enabled: Bool) {
@@ -147,14 +144,9 @@ final class BatteryViewModel: ObservableObject {
     Task { [weak self] in
       do {
         try self?.privilegeManager.installHelper()
-        self?.refreshHelperServiceStatus()
-        self?.applyControlIfNeeded(force: true)
+        self?.handleHelperInstallSuccess()
       } catch {
-        self?.refreshHelperServiceStatus()
-        if self?.isHelperServiceInstalled == true {
-          return
-        }
-        self?.handle(error)
+        self?.handleHelperInstallFailure(error)
       }
     }
   }
@@ -179,10 +171,7 @@ final class BatteryViewModel: ObservableObject {
 
     do {
       let info = try await infoProvider.fetchBatteryInfo()
-      batteryInfo = info
-      lastUpdated = Date()
-      refreshSmcStatus()
-      applyControlIfNeeded(force: false)
+      applyRefreshedBatteryInfo(info)
     } catch {
       handle(error)
     }
@@ -197,6 +186,16 @@ final class BatteryViewModel: ObservableObject {
   private func persistSettingsAndRefreshSmcStatus() {
     persistSettings()
     refreshSmcStatus()
+  }
+
+  private func persistAndApplyControl(force: Bool) {
+    persistSettingsAndRefreshSmcStatus()
+    applyControlIfNeeded(force: force)
+  }
+
+  private func persistAndApplyMode(_ mode: ChargingMode, force: Bool) {
+    persistSettingsAndRefreshSmcStatus()
+    applyModeIfNeeded(mode, force: force)
   }
 
   private func applyControlIfNeeded(force: Bool) {
@@ -256,14 +255,7 @@ final class BatteryViewModel: ObservableObject {
   }
 
   private func performHelperUninstall() async {
-    if isControlSupported, isLimitControlEnabled {
-      do {
-        try await controller.applyChargingMode(.normal)
-        lastAppliedMode = .normal
-      } catch {
-        handle(error)
-      }
-    }
+    await restoreNormalModeBeforeUninstallIfNeeded()
 
     do {
       try privilegeManager.uninstallHelper()
@@ -295,13 +287,60 @@ final class BatteryViewModel: ObservableObject {
 
   // MARK: - Helpers
 
+  private func applyRefreshedBatteryInfo(_ info: BatteryInfo) {
+    batteryInfo = info
+    lastUpdated = Date()
+    refreshSmcStatus()
+    applyControlIfNeeded(force: false)
+  }
+
+  private func handleHelperInstallSuccess() {
+    refreshHelperServiceStatus()
+    applyControlIfNeeded(force: true)
+  }
+
+  private func handleHelperInstallFailure(_ error: Error) {
+    refreshHelperServiceStatus()
+    guard !isHelperServiceInstalled else {
+      return
+    }
+    handle(error)
+  }
+
+  private func restoreNormalModeBeforeUninstallIfNeeded() async {
+    guard isControlSupported, isLimitControlEnabled else {
+      return
+    }
+
+    do {
+      try await controller.applyChargingMode(.normal)
+      lastAppliedMode = .normal
+    } catch {
+      handle(error)
+    }
+  }
+
   private func handle(_ error: Error) {
-    if let batteryError = error as? BatteryError, case .controllerUnavailable = batteryError {
+    if shouldIgnoreControllerUnavailableError(error) {
       errorMessage = nil
       refreshHelperServiceStatus()
       return
     }
-    errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+    errorMessage = errorDescription(for: error)
+  }
+
+  private func shouldIgnoreControllerUnavailableError(_ error: Error) -> Bool {
+    guard let batteryError = error as? BatteryError else {
+      return false
+    }
+    if case .controllerUnavailable = batteryError {
+      return true
+    }
+    return false
+  }
+
+  private func errorDescription(for error: Error) -> String {
+    (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
   }
 
   private func startRefreshTimer() {
