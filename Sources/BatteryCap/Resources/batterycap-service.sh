@@ -214,7 +214,14 @@ install_helper() {
   fi
 
   launchctl bootout system "$PLIST_DEST" 2>/dev/null || true
-  launchctl bootstrap system "$PLIST_DEST"
+  local bootstrap_output
+  if ! bootstrap_output="$(launchctl bootstrap system "$PLIST_DEST" 2>&1)"; then
+    if launchctl print system/"$LAUNCH_LABEL" >/dev/null 2>&1; then
+      log "bootstrap 返回非零，但服务已加载：$bootstrap_output"
+    else
+      fatal "bootstrap 失败：$bootstrap_output"
+    fi
+  fi
   launchctl enable system/"$LAUNCH_LABEL"
   launchctl kickstart -k system/"$LAUNCH_LABEL" || true
   log "Helper installed"

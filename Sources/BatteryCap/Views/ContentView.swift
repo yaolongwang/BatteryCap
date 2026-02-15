@@ -278,7 +278,7 @@ struct ContentView: View {
 
                     Spacer()
 
-                    Text(viewModel.isHelperServiceInstalled ? "卸载将触发系统管理员授权" : "安装将触发系统管理员授权")
+                    Text(viewModel.isHelperServiceInstalled ? "卸载需系统管理员授权" : "安装需系统管理员授权")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.trailing)

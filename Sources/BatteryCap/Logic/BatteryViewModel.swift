@@ -150,6 +150,10 @@ final class BatteryViewModel: ObservableObject {
         self?.refreshHelperServiceStatus()
         self?.applyControlIfNeeded(force: true)
       } catch {
+        self?.refreshHelperServiceStatus()
+        if self?.isHelperServiceInstalled == true {
+          return
+        }
         self?.handle(error)
       }
     }
@@ -252,10 +256,7 @@ final class BatteryViewModel: ObservableObject {
   }
 
   private func performHelperUninstall() async {
-    isLimitControlEnabled = false
-    persistSettings()
-
-    if isControlSupported {
+    if isControlSupported, isLimitControlEnabled {
       do {
         try await controller.applyChargingMode(.normal)
         lastAppliedMode = .normal
@@ -268,6 +269,7 @@ final class BatteryViewModel: ObservableObject {
       try privilegeManager.uninstallHelper()
       refreshHelperServiceStatus()
     } catch {
+      refreshHelperServiceStatus()
       handle(error)
     }
   }
