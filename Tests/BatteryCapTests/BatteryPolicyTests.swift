@@ -5,45 +5,52 @@ import XCTest
 final class BatteryPolicyTests: XCTestCase {
   func testDesiredMode_ControlDisabled_ReturnsNormal() {
     let policy = BatteryPolicy()
-    let settings = BatterySettings(
-      isLimitControlEnabled: false,
-      chargeLimit: 80,
-      keepStateOnQuit: false,
-      launchAtLoginEnabled: false
-    )
-
-    let mode = policy.desiredMode(currentCharge: 90, settings: settings, lastAppliedMode: nil)
-
+    let mode = policy.desiredMode(currentCharge: 90, settings: settings(enabled: false, limit: 80), lastAppliedMode: nil)
     XCTAssertEqual(mode, .normal)
   }
 
-  func testDesiredMode_ChargeBelowLimit_ReturnsChargeLimit() {
-    let policy = BatteryPolicy()
-    let settings = BatterySettings(
-      isLimitControlEnabled: true,
-      chargeLimit: 80,
-      keepStateOnQuit: false,
-      launchAtLoginEnabled: false
-    )
-
-    let mode = policy.desiredMode(currentCharge: 60, settings: settings, lastAppliedMode: nil)
-
+  func testDesiredMode_ControlEnabledBelowUpperThreshold_ReturnsChargeLimit() {
+    let policy = BatteryPolicy(hysteresisPercent: 1)
+    let mode = policy.desiredMode(currentCharge: 80, settings: settings(enabled: true, limit: 80), lastAppliedMode: nil)
     XCTAssertEqual(mode, .chargeLimit(80))
   }
 
-  func testDesiredMode_ChargeAtOrAboveLimit_ReturnsHold() {
-    let policy = BatteryPolicy()
-    let settings = BatterySettings(
-      isLimitControlEnabled: true,
-      chargeLimit: 80,
+  func testDesiredMode_ControlEnabledAtUpperThreshold_ReturnsHold() {
+    let policy = BatteryPolicy(hysteresisPercent: 1)
+    let mode = policy.desiredMode(currentCharge: 81, settings: settings(enabled: true, limit: 80), lastAppliedMode: nil)
+    XCTAssertEqual(mode, .hold(81))
+  }
+
+  func testDesiredMode_LastModeHoldAboveLowerThreshold_RemainsHold() {
+    let policy = BatteryPolicy(hysteresisPercent: 1)
+    let mode = policy.desiredMode(currentCharge: 80, settings: settings(enabled: true, limit: 80), lastAppliedMode: .hold(90))
+    XCTAssertEqual(mode, .hold(80))
+  }
+
+  func testDesiredMode_LastModeHoldAtLowerThreshold_SwitchesToChargeLimit() {
+    let policy = BatteryPolicy(hysteresisPercent: 1)
+    let mode = policy.desiredMode(currentCharge: 79, settings: settings(enabled: true, limit: 80), lastAppliedMode: .hold(90))
+    XCTAssertEqual(mode, .chargeLimit(80))
+  }
+
+  func testDesiredMode_ChargeLimitBelowMinimum_ClampsToMinLimit() {
+    let policy = BatteryPolicy(hysteresisPercent: 1)
+    let mode = policy.desiredMode(currentCharge: 40, settings: settings(enabled: true, limit: 20), lastAppliedMode: nil)
+    XCTAssertEqual(mode, .chargeLimit(BatteryConstants.minChargeLimit))
+  }
+
+  func testDesiredMode_ChargeLimitAboveMaximum_ClampsToMaxLimit() {
+    let policy = BatteryPolicy(hysteresisPercent: 1)
+    let mode = policy.desiredMode(currentCharge: 99, settings: settings(enabled: true, limit: 120), lastAppliedMode: nil)
+    XCTAssertEqual(mode, .chargeLimit(BatteryConstants.maxChargeLimit))
+  }
+
+  private func settings(enabled: Bool, limit: Int) -> BatterySettings {
+    BatterySettings(
+      isLimitControlEnabled: enabled,
+      chargeLimit: limit,
       keepStateOnQuit: false,
       launchAtLoginEnabled: false
     )
-
-    let modeAtLimit = policy.desiredMode(currentCharge: 80, settings: settings, lastAppliedMode: nil)
-    let modeAboveLimit = policy.desiredMode(currentCharge: 95, settings: settings, lastAppliedMode: nil)
-
-    XCTAssertEqual(modeAtLimit, .chargeLimit(80))
-    XCTAssertEqual(modeAboveLimit, .hold(95))
   }
 }
