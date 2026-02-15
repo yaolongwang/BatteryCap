@@ -4,14 +4,19 @@ enum BatteryCapMaintenance {
   private static let disableControlsArgument = "--disable-controls-for-uninstall"
 
   static var shouldRun: Bool {
-    CommandLine.arguments.contains(disableControlsArgument)
+    shouldRun(arguments: CommandLine.arguments)
+  }
+
+  static func shouldRun(arguments: [String]) -> Bool {
+    arguments.contains(disableControlsArgument)
   }
 
   static func run() {
-    var settings = UserDefaultsBatterySettingsStore().load()
+    let settingsStore = UserDefaultsBatterySettingsStore()
+    var settings = settingsStore.load()
     settings.isLimitControlEnabled = false
     settings.launchAtLoginEnabled = false
-    UserDefaultsBatterySettingsStore().save(settings)
+    settingsStore.save(settings)
 
     do {
       _ = try LaunchAtLoginManager.shared.setEnabled(false)

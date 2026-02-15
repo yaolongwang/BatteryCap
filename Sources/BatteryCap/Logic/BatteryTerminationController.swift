@@ -2,6 +2,8 @@ import Foundation
 
 /// 应用退出时的电池恢复逻辑
 enum BatteryTerminationController {
+  private static let restoreTimeoutSeconds = 2
+
   static func restoreIfNeeded() {
     let settings = UserDefaultsBatterySettingsStore().load()
     guard !settings.keepStateOnQuit else {
@@ -27,6 +29,6 @@ enum BatteryTerminationController {
       semaphore.signal()
     }
 
-    _ = semaphore.wait(timeout: .now() + .seconds(2))
+    _ = semaphore.wait(timeout: .now() + .seconds(restoreTimeoutSeconds))
   }
 }

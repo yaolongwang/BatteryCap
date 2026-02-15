@@ -31,21 +31,19 @@ final class LaunchAtLoginManager: Sendable {
   private func mapStatus(_ status: SMAppService.Status) -> LaunchAtLoginState {
     switch status {
     case .enabled:
-      return LaunchAtLoginState(isEnabled: true, message: nil)
+      return state(enabled: true)
     case .requiresApproval:
-      return LaunchAtLoginState(
-        isEnabled: true,
-        message: "需要在“系统设置 → 登录项”中允许 BatteryCap。"
-      )
+      return state(enabled: true, message: "需要在“系统设置 → 登录项”中允许 BatteryCap。")
     case .notRegistered:
-      return LaunchAtLoginState(isEnabled: false, message: nil)
+      return state(enabled: false)
     case .notFound:
-      return LaunchAtLoginState(
-        isEnabled: false,
-        message: "请将应用放入“应用程序”文件夹后重试。"
-      )
+      return state(enabled: false, message: "请将应用放入“应用程序”文件夹后重试。")
     @unknown default:
-      return LaunchAtLoginState(isEnabled: false, message: "开机自启动状态未知。")
+      return state(enabled: false, message: "开机自启动状态未知。")
     }
+  }
+
+  private func state(enabled: Bool, message: String? = nil) -> LaunchAtLoginState {
+    LaunchAtLoginState(isEnabled: enabled, message: message)
   }
 }

@@ -48,7 +48,7 @@ final class UserDefaultsBatterySettingsStore: BatterySettingsStoreProtocol {
 
     return BatterySettings(
       isLimitControlEnabled: enabled,
-      chargeLimit: clampLimit(limit),
+      chargeLimit: BatteryConstants.clampChargeLimit(limit),
       keepStateOnQuit: keepStateOnQuit,
       launchAtLoginEnabled: launchAtLoginEnabled
     )
@@ -56,14 +56,8 @@ final class UserDefaultsBatterySettingsStore: BatterySettingsStoreProtocol {
 
   func save(_ settings: BatterySettings) {
     userDefaults.set(settings.isLimitControlEnabled, forKey: Keys.isLimitControlEnabled)
-    userDefaults.set(clampLimit(settings.chargeLimit), forKey: Keys.chargeLimit)
+    userDefaults.set(BatteryConstants.clampChargeLimit(settings.chargeLimit), forKey: Keys.chargeLimit)
     userDefaults.set(settings.keepStateOnQuit, forKey: Keys.keepStateOnQuit)
     userDefaults.set(settings.launchAtLoginEnabled, forKey: Keys.launchAtLoginEnabled)
-  }
-
-  // MARK: - Helpers
-
-  private func clampLimit(_ value: Int) -> Int {
-    min(max(value, BatteryConstants.minChargeLimit), BatteryConstants.maxChargeLimit)
   }
 }

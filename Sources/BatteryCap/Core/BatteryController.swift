@@ -42,14 +42,11 @@ struct SMCBatteryController: BatteryControllerProtocol, Sendable {
 
   func applyChargingMode(_ mode: ChargingMode) async throws {
     let configuration = SMCConfiguration.load()
-    guard isSupported else {
+    guard configuration.status.isEnabled else {
       throw BatteryError.unsupportedOperation
     }
     guard configuration.chargingSwitch != nil else {
       throw BatteryError.unsupportedOperation
-    }
-    guard configuration.status.isEnabled else {
-      throw BatteryError.permissionDenied
     }
 
     try await helperClient.setChargingEnabled(mode.shouldEnableCharging)

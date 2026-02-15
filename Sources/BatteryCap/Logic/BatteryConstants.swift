@@ -8,4 +8,12 @@ enum BatteryConstants {
   static let hysteresisPercent = 1
   static let refreshInterval: TimeInterval = 60
   static let refreshTolerance: TimeInterval = 5
+
+  static var chargeLimitSliderRange: ClosedRange<Double> {
+    Double(minChargeLimit)...Double(maxChargeLimit)
+  }
+
+  static func clampChargeLimit(_ value: Int) -> Int {
+    min(max(value, minChargeLimit), maxChargeLimit)
+  }
 }

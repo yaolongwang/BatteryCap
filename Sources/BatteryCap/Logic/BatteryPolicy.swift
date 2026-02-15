@@ -18,7 +18,7 @@ struct BatteryPolicy {
       return .normal
     }
 
-    let limit = clampLimit(settings.chargeLimit)
+    let limit = BatteryConstants.clampChargeLimit(settings.chargeLimit)
     let upper = min(limit + hysteresisPercent, BatteryConstants.maxChargeLimit)
     let lower = max(limit - hysteresisPercent, BatteryConstants.minChargeLimit)
 
@@ -30,9 +30,6 @@ struct BatteryPolicy {
     }
   }
 
-  private func clampLimit(_ value: Int) -> Int {
-    min(max(value, BatteryConstants.minChargeLimit), BatteryConstants.maxChargeLimit)
-  }
 }
 
 extension BatteryPolicy {

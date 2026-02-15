@@ -25,15 +25,15 @@ final class BatteryViewModel: ObservableObject {
   }
 
   var canRequestSmcWriteAccess: Bool {
-    smcStatus.needsPrivilege && SMCManualInstall.helperServiceScriptURL != nil
+    smcStatus.needsPrivilege && hasHelperServiceScript
   }
 
   var canInstallHelperService: Bool {
-    SMCManualInstall.helperServiceScriptURL != nil
+    hasHelperServiceScript
   }
 
   var canUninstallHelperService: Bool {
-    SMCManualInstall.helperServiceScriptURL != nil
+    hasHelperServiceScript
   }
 
   // MARK: - Dependencies
@@ -109,23 +109,20 @@ final class BatteryViewModel: ObservableObject {
 
   func updateLimitControlEnabled(_ enabled: Bool) {
     isLimitControlEnabled = enabled
-    persistSettings()
-    refreshSmcStatus()
+    persistSettingsAndRefreshSmcStatus()
     applyControlIfNeeded(force: true)
   }
 
   func updateChargeLimit(_ newValue: Int) {
-    chargeLimit = clampLimit(newValue)
-    persistSettings()
-    refreshSmcStatus()
+    chargeLimit = BatteryConstants.clampChargeLimit(newValue)
+    persistSettingsAndRefreshSmcStatus()
     applyControlIfNeeded(force: false)
   }
 
   func restoreSystemDefault() {
     isLimitControlEnabled = false
     chargeLimit = BatteryConstants.maxChargeLimit
-    persistSettings()
-    refreshSmcStatus()
+    persistSettingsAndRefreshSmcStatus()
     applyModeIfNeeded(.normal, force: true)
   }
 
@@ -190,13 +187,12 @@ final class BatteryViewModel: ObservableObject {
   // MARK: - Settings & Control
 
   private func persistSettings() {
-    let settings = BatterySettings(
-      isLimitControlEnabled: isLimitControlEnabled,
-      chargeLimit: clampLimit(chargeLimit),
-      keepStateOnQuit: keepStateOnQuit,
-      launchAtLoginEnabled: isLaunchAtLoginEnabled
-    )
-    settingsStore.save(settings)
+    settingsStore.save(currentSettings)
+  }
+
+  private func persistSettingsAndRefreshSmcStatus() {
+    persistSettings()
+    refreshSmcStatus()
   }
 
   private func applyControlIfNeeded(force: Bool) {
@@ -281,24 +277,20 @@ final class BatteryViewModel: ObservableObject {
   private var currentSettings: BatterySettings {
     BatterySettings(
       isLimitControlEnabled: isLimitControlEnabled,
-      chargeLimit: clampLimit(chargeLimit),
+      chargeLimit: BatteryConstants.clampChargeLimit(chargeLimit),
       keepStateOnQuit: keepStateOnQuit,
       launchAtLoginEnabled: isLaunchAtLoginEnabled
     )
   }
 
-  // MARK: - Helpers
-
-  private func clampLimit(_ value: Int) -> Int {
-    min(max(value, BatteryConstants.minChargeLimit), BatteryConstants.maxChargeLimit)
+  private var hasHelperServiceScript: Bool {
+    SMCManualInstall.helperServiceScriptURL != nil
   }
 
+  // MARK: - Helpers
+
   private func handle(_ error: Error) {
-    if let batteryError = error as? BatteryError {
-      errorMessage = batteryError.localizedDescription
-    } else {
-      errorMessage = error.localizedDescription
-    }
+    errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
   }
 
   private func startRefreshTimer() {

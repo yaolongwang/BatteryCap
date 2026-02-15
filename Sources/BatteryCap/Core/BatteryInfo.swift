@@ -26,7 +26,17 @@ struct BatteryInfo: Equatable {
 
 extension BatteryInfo {
   var powerSourceText: String {
-    switch powerSource {
+    powerSource.descriptionText
+  }
+
+  var chargeStateText: String {
+    chargeState.descriptionText
+  }
+}
+
+private extension BatteryPowerSource {
+  var descriptionText: String {
+    switch self {
     case .battery:
       return "电池供电"
     case .adapter:
@@ -35,9 +45,11 @@ extension BatteryInfo {
       return "未知供电"
     }
   }
+}
 
-  var chargeStateText: String {
-    switch chargeState {
+private extension BatteryChargeState {
+  var descriptionText: String {
+    switch self {
     case .charging:
       return "充电中"
     case .discharging:

@@ -64,24 +64,25 @@ final class SMCHelperClient: @unchecked Sendable {
     try await withCheckedThrowingContinuation {
       (continuation: CheckedContinuation<T, Error>) in
       let gate = ContinuationGate()
+      let unavailableError = BatteryError.controllerUnavailable
       let connection = NSXPCConnection(
         machServiceName: Self.machServiceName,
         options: .privileged
       )
       connection.remoteObjectInterface = NSXPCInterface(with: SMCHelperProtocol.self)
       connection.invalidationHandler = {
-        gate.resume(continuation, .failure(BatteryError.controllerUnavailable))
+        gate.resume(continuation, .failure(unavailableError))
       }
       connection.resume()
 
       guard
         let proxy = connection.remoteObjectProxyWithErrorHandler({ _ in
-          gate.resume(continuation, .failure(BatteryError.controllerUnavailable))
+          gate.resume(continuation, .failure(unavailableError))
           connection.invalidate()
         }) as? SMCHelperProtocol
       else {
         connection.invalidate()
-        gate.resume(continuation, .failure(BatteryError.controllerUnavailable))
+        gate.resume(continuation, .failure(unavailableError))
         return
       }
 
@@ -155,7 +156,7 @@ private final class ContinuationGate {
     _ result: Result<T, Error>
   ) {
     lock.lock()
-    if didResume {
+    guard !didResume else {
       lock.unlock()
       return
     }

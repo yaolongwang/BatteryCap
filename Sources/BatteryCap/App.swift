@@ -5,15 +5,33 @@ import SwiftUI
 @main
 struct BatteryCapEntry {
   static func main() {
-    if BatteryCapMaintenance.shouldRun {
+    let arguments = CommandLine.arguments
+    let environment = ProcessInfo.processInfo.environment
+
+    switch LaunchMode.resolve(arguments: arguments, environment: environment) {
+    case .maintenance:
       BatteryCapMaintenance.run()
-      return
-    }
-    if BatteryCapDiagnostics.shouldRun {
+    case .diagnostics:
       BatteryCapDiagnostics.run()
-      return
+    case .app:
+      BatteryCapApp.main()
     }
-    BatteryCapApp.main()
+  }
+}
+
+private enum LaunchMode {
+  case app
+  case maintenance
+  case diagnostics
+
+  static func resolve(arguments: [String], environment: [String: String]) -> LaunchMode {
+    if BatteryCapMaintenance.shouldRun(arguments: arguments) {
+      return .maintenance
+    }
+    if BatteryCapDiagnostics.shouldRun(arguments: arguments, environment: environment) {
+      return .diagnostics
+    }
+    return .app
   }
 }
 
@@ -34,13 +52,16 @@ struct BatteryCapApp: App {
 
   private var menuBarIconName: String {
     let isLocked = viewModel.isLimitControlEnabled
+    let baseIconName: String
     switch viewModel.batteryInfo?.chargeState {
     case .charging:
-      return isLocked ? "bolt.batteryblock.fill" : "bolt.batteryblock"
+      baseIconName = "bolt.batteryblock"
     case .discharging:
-      return isLocked ? "minus.plus.batteryblock.fill" : "minus.plus.batteryblock"
+      baseIconName = "minus.plus.batteryblock"
     case .paused, .charged, .unknown, .none:
-      return isLocked ? "batteryblock.fill" : "batteryblock"
+      baseIconName = "batteryblock"
     }
+
+    return isLocked ? "\(baseIconName).fill" : baseIconName
   }
 }

@@ -8,15 +8,11 @@ struct SMCKey: Equatable, Sendable {
   let code: UInt32
 
   init(_ rawValue: String) throws {
-    guard rawValue.count == 4 else {
+    guard let code = FourCharCode.from(rawValue) else {
       throw BatteryError.smcKeyInvalid
     }
     self.rawValue = rawValue
-    var value: UInt32 = 0
-    for byte in rawValue.utf8 {
-      value = (value << 8) | UInt32(byte)
-    }
-    self.code = value
+    self.code = code
   }
 }
 
@@ -26,15 +22,11 @@ struct SMCDataType: Equatable, Sendable {
   let code: UInt32
 
   init?(rawValue: String) {
-    guard rawValue.count == 4 else {
+    guard let code = FourCharCode.from(rawValue) else {
       return nil
     }
     self.rawValue = rawValue
-    var value: UInt32 = 0
-    for byte in rawValue.utf8 {
-      value = (value << 8) | UInt32(byte)
-    }
-    self.code = value
+    self.code = code
   }
 }
 
@@ -43,4 +35,18 @@ struct SMCKeyDefinition: Sendable {
   let key: SMCKey
   let dataType: SMCDataType?
   let dataSize: Int
+}
+
+private enum FourCharCode {
+  static func from(_ rawValue: String) -> UInt32? {
+    guard rawValue.count == 4 else {
+      return nil
+    }
+
+    var value: UInt32 = 0
+    for byte in rawValue.utf8 {
+      value = (value << 8) | UInt32(byte)
+    }
+    return value
+  }
 }

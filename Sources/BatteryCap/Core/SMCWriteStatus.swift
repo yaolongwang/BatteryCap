@@ -19,7 +19,7 @@ enum SMCWriteStatus: Equatable {
   var needsPrivilege: Bool {
     switch self {
     case .disabled(let reason):
-      return reason.contains("管理员") || reason.contains("授权")
+      return privilegeKeywords.contains { reason.contains($0) }
     case .enabled:
       return false
     }
@@ -42,6 +42,12 @@ enum SMCWriteStatus: Equatable {
       return nil
     }
   }
+
+  private var privilegeKeywords: [String] {
+    Self.requiredPrivilegeKeywords
+  }
+
+  private static let requiredPrivilegeKeywords = ["管理员", "授权"]
 }
 
 /// 写入能力检测结果

@@ -10,7 +10,7 @@ enum SMCManualInstall {
 
   private static func scriptURL(inProjectPath path: String, bundleResource: String) -> URL? {
     let fileManager = FileManager.default
-    let cwd = FileManager.default.currentDirectoryPath
+    let cwd = fileManager.currentDirectoryPath
     let url = URL(fileURLWithPath: cwd).appendingPathComponent(path)
     if fileManager.fileExists(atPath: url.path) {
       return url

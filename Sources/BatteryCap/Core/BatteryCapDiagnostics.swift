@@ -6,34 +6,28 @@ enum BatteryCapDiagnostics {
   // MARK: - Entry
 
   static var shouldRun: Bool {
-    CommandLine.arguments.contains("--diagnose")
-      || CommandLine.arguments.contains("--smc-diagnose")
-      || ProcessInfo.processInfo.environment["BATTERYCAP_DIAG"] == "1"
+    shouldRun(
+      arguments: CommandLine.arguments,
+      environment: ProcessInfo.processInfo.environment
+    )
+  }
+
+  static func shouldRun(
+    arguments: [String],
+    environment: [String: String]
+  ) -> Bool {
+    arguments.contains(where: { Trigger.diagnosticArguments.contains($0) })
+      || environment[Trigger.environmentKey] == Trigger.environmentEnabledValue
   }
 
   static func run() {
     let timestamp = ISO8601DateFormatter().string(from: Date())
-    print("BatteryCap 诊断开始")
-    print("时间: \(timestamp)")
-    print("系统: \(ProcessInfo.processInfo.operatingSystemVersionString)")
-    print("机型: \(HardwareInfo.modelIdentifier ?? "未知")")
-    print("架构: \(HardwareInfo.cpuArch ?? "未知")")
-    print("进程参数: \(CommandLine.arguments.joined(separator: " "))")
+    let helperInstalled = SMCHelperClient.isInstalled
 
-    let settings = UserDefaultsBatterySettingsStore().load()
-    print(
-      "设置: 电量锁定=\(settings.isLimitControlEnabled), 最高电量=\(settings.chargeLimit)%, 退出保留=\(settings.keepStateOnQuit)"
-    )
-
+    printRuntimeEnvironment(timestamp: timestamp)
+    printCurrentSettings()
     let configuration = SMCConfiguration.load()
-    print("SMC 写入开关: \(configuration.allowWrites ? "开启" : "关闭")")
-    print("SMC 状态: \(configuration.status.message)")
-    print("Helper 已安装: \(SMCHelperClient.isInstalled ? "是" : "否")")
-    if let scriptURL = SMCManualInstall.helperServiceScriptURL {
-      print("Helper 脚本: \(scriptURL.path)")
-    } else {
-      print("Helper 脚本: 未找到")
-    }
+    printConfiguration(configuration, helperInstalled: helperInstalled)
 
     guard let chargingSwitch = configuration.chargingSwitch else {
       print("SMC 充电控制键: 未找到（无法诊断）")
@@ -41,37 +35,83 @@ enum BatteryCapDiagnostics {
       return
     }
 
+    printChargingSwitchSummary(chargingSwitch)
+    runKeyListDiagnostics(helperInstalled: helperInstalled)
+    runChargingSwitchDiagnostics(chargingSwitch, helperInstalled: helperInstalled)
+
+    print("BatteryCap 诊断结束")
+  }
+
+  // MARK: - Helper Reads
+
+  private static func printRuntimeEnvironment(timestamp: String) {
+    print("BatteryCap 诊断开始")
+    print("时间: \(timestamp)")
+    print("系统: \(ProcessInfo.processInfo.operatingSystemVersionString)")
+    print("机型: \(HardwareInfo.modelIdentifier ?? "未知")")
+    print("架构: \(HardwareInfo.cpuArch ?? "未知")")
+    print("进程参数: \(CommandLine.arguments.joined(separator: " "))")
+  }
+
+  private static func printCurrentSettings() {
+    let settings = UserDefaultsBatterySettingsStore().load()
+    print(
+      "设置: 电量锁定=\(settings.isLimitControlEnabled), 最高电量=\(settings.chargeLimit)%, 退出保留=\(settings.keepStateOnQuit)"
+    )
+  }
+
+  private static func printConfiguration(_ configuration: SMCConfiguration, helperInstalled: Bool) {
+    print("SMC 写入开关: \(configuration.allowWrites ? "开启" : "关闭")")
+    print("SMC 状态: \(configuration.status.message)")
+    print("Helper 已安装: \(helperInstalled ? "是" : "否")")
+    if let scriptURL = SMCManualInstall.helperServiceScriptURL {
+      print("Helper 脚本: \(scriptURL.path)")
+    } else {
+      print("Helper 脚本: 未找到")
+    }
+  }
+
+  private static func printChargingSwitchSummary(_ chargingSwitch: SMCChargingSwitch) {
     let keys = chargingSwitch.keyNames.joined(separator: ", ")
     print("SMC 充电开关键: \(keys) / \(chargingSwitch.dataSize) 字节")
+  }
 
+  private static func runKeyListDiagnostics(helperInstalled: Bool) {
     let keyList = SMCClient.keyListReport()
-    print("SMC Key 列表: 阶段=\(describe(keyList.stage))")
+    print("SMC Key 列表: 阶段=\(keyList.stage.descriptionText)")
     print("SMC Key 列表: 返回=\(formatKernReturn(keyList.kernReturn))")
     print("SMC Key 列表: 总数=\(keyList.keyCount), 扫描=\(keyList.scannedCount)")
     if keyList.candidates.isEmpty {
       print("SMC Key 列表: 候选键=空")
-    } else {
-      let joined = keyList.candidates.joined(separator: ", ")
-      print("SMC Key 列表: 候选键=\(joined)")
-      print("候选键读取:")
-      for key in keyList.candidates {
-        let report = SMCClient.readKeyReport(key)
-        printKeyReport(report)
-      }
-      if SMCHelperClient.isInstalled {
-        runHelperCandidateReads(keys: keyList.candidates)
-      }
+      return
     }
 
+    let joined = keyList.candidates.joined(separator: ", ")
+    print("SMC Key 列表: 候选键=\(joined)")
+    print("候选键读取:")
+    for key in keyList.candidates {
+      let report = SMCClient.readKeyReport(key)
+      printKeyReport(report)
+    }
+    if helperInstalled {
+      runHelperCandidateReads(keys: keyList.candidates)
+    }
+  }
+
+  private static func runChargingSwitchDiagnostics(
+    _ chargingSwitch: SMCChargingSwitch,
+    helperInstalled: Bool
+  ) {
     let directResult = SMCClient.checkWriteAccess(chargingSwitch)
-    print("直接写入检测: \(describe(directResult))")
+    print("直接写入检测: \(directResult.descriptionText)")
 
     print("充电开关键读取:")
     for key in chargingSwitch.keyNames {
       let report = SMCClient.readKeyReport(key)
       printKeyReport(report)
     }
-    if SMCHelperClient.isInstalled {
+
+    if helperInstalled {
       runHelperCandidateReads(keys: chargingSwitch.keyNames)
       print("Helper 写入检测: 跳过（充电开关键会改变充电状态）")
       print("Helper 诊断: 跳过（充电开关键会改变充电状态）")
@@ -79,22 +119,19 @@ enum BatteryCapDiagnostics {
       print("Helper 写入检测: 跳过（未安装）")
       print("Helper 诊断: 跳过（未安装）")
     }
-
-    print("BatteryCap 诊断结束")
   }
-
-  // MARK: - Helper Reads
 
   private static func runHelperCandidateReads(keys: [String]) {
     guard !keys.isEmpty else {
       return
     }
     let semaphore = DispatchSemaphore(value: 0)
+    let helperClient = SMCHelperClient()
     print("候选键读取（特权）:")
     Task {
       for key in keys {
         do {
-          let report = try await SMCHelperClient().readKey(key)
+          let report = try await helperClient.readKey(key)
           printHelperKeyReport(report)
         } catch {
           let message =
@@ -105,75 +142,20 @@ enum BatteryCapDiagnostics {
       semaphore.signal()
     }
 
-    if semaphore.wait(timeout: .now() + .seconds(15)) == .timedOut {
+    if semaphore.wait(timeout: .now() + .seconds(DiagnosticConstants.helperReadTimeoutSeconds))
+      == .timedOut
+    {
       print("候选键读取（特权）: 超时（15 秒）")
     }
   }
 
   // MARK: - Formatting
 
-  private static func describe(_ result: SMCWriteCheckResult) -> String {
-    switch result {
-    case .supported:
-      return "支持（可写）"
-    case .permissionDenied:
-      return "权限不足"
-    case .keyNotFound:
-      return "键不存在/不可写"
-    case .typeMismatch:
-      return "键类型不匹配"
-    case .smcUnavailable:
-      return "无法连接到 SMC"
-    case .unknown:
-      return "未知"
-    }
-  }
-
-  private static func describe(_ stage: SMCKeyListStage) -> String {
-    switch stage {
-    case .ok:
-      return "成功"
-    case .serviceNotFound:
-      return "未找到 AppleSMC 服务"
-    case .serviceOpenFailed:
-      return "打开服务失败"
-    case .userClientOpenFailed:
-      return "userClient 打开失败"
-    case .keyCountFailed:
-      return "读取 Key 总数失败"
-    case .keyReadFailed:
-      return "读取 Key 列表失败"
-    case .unknown:
-      return "未知"
-    }
-  }
-
-  private static func describe(_ stage: SMCKeyReadStage) -> String {
-    switch stage {
-    case .ok:
-      return "成功"
-    case .invalidKey:
-      return "键格式无效"
-    case .serviceNotFound:
-      return "未找到 AppleSMC 服务"
-    case .serviceOpenFailed:
-      return "打开服务失败"
-    case .userClientOpenFailed:
-      return "userClient 打开失败"
-    case .keyInfoFailed:
-      return "读取 KeyInfo 失败"
-    case .keyInfoInvalid:
-      return "KeyInfo 无效"
-    case .readFailed:
-      return "读取失败"
-    }
-  }
-
   private static func printKeyReport(_ report: SMCKeyReadReport) {
     print(
-      "  \(report.key): stage=\(describe(report.stage)), return=\(formatKernReturn(report.kernReturn))"
+      "  \(report.key): stage=\(report.stage.descriptionText), return=\(formatKernReturn(report.kernReturn))"
     )
-    let value = formatBytes(report.bytes, dataType: report.dataType)
+    let value = formatBytes(report.bytes)
     let suffix = report.truncated ? " (truncated)" : ""
     print(
       "    size=\(report.dataSize), type=\(formatDataType(report.dataType)), value=\(value)\(suffix)"
@@ -182,37 +164,14 @@ enum BatteryCapDiagnostics {
 
   private static func printHelperKeyReport(_ report: SMCHelperKeyReadReport) {
     print(
-      "  \(report.key): stage=\(describe(report.stage)), return=\(formatKernReturn(report.kernReturn))"
+      "  \(report.key): stage=\(report.stage.descriptionText), return=\(formatKernReturn(report.kernReturn))"
     )
     let dataType = UInt32(bitPattern: report.dataType)
-    let value = formatBytes(Array(report.bytes), dataType: dataType)
+    let value = formatBytes(Array(report.bytes))
     let suffix = report.truncated ? " (truncated)" : ""
     print(
       "    size=\(report.dataSize), type=\(formatDataType(dataType)), value=\(value)\(suffix)"
     )
-  }
-
-  private static func describe(_ stage: SMCHelperKeyReadStage) -> String {
-    switch stage {
-    case .ok:
-      return "成功"
-    case .invalidKey:
-      return "键格式无效"
-    case .serviceNotFound:
-      return "未找到 AppleSMC 服务"
-    case .serviceOpenFailed:
-      return "打开服务失败"
-    case .userClientOpenFailed:
-      return "userClient 打开失败"
-    case .keyInfoFailed:
-      return "读取 KeyInfo 失败"
-    case .keyInfoInvalid:
-      return "KeyInfo 无效"
-    case .readFailed:
-      return "读取失败"
-    case .unknown:
-      return "未知"
-    }
   }
 
   private static func formatDataType(_ code: UInt32) -> String {
@@ -231,7 +190,7 @@ enum BatteryCapDiagnostics {
     return "0x\(String(format: "%08X", code))"
   }
 
-  private static func formatBytes(_ bytes: [UInt8], dataType: UInt32) -> String {
+  private static func formatBytes(_ bytes: [UInt8]) -> String {
     if bytes.isEmpty {
       return "空"
     }
@@ -292,6 +251,16 @@ enum BatteryCapDiagnostics {
   }
 }
 
+private enum DiagnosticConstants {
+  static let helperReadTimeoutSeconds = 15
+}
+
+private enum Trigger {
+  static let diagnosticArguments: Set<String> = ["--diagnose", "--smc-diagnose"]
+  static let environmentKey = "BATTERYCAP_DIAG"
+  static let environmentEnabledValue = "1"
+}
+
 private enum HardwareInfo {
   static var modelIdentifier: String? {
     sysctlString("hw.model")
@@ -312,5 +281,93 @@ private enum HardwareInfo {
     }
     let bytes = data.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }
     return String(bytes: bytes, encoding: .utf8)
+  }
+}
+
+private extension SMCWriteCheckResult {
+  var descriptionText: String {
+    switch self {
+    case .supported:
+      return "支持（可写）"
+    case .permissionDenied:
+      return "权限不足"
+    case .keyNotFound:
+      return "键不存在/不可写"
+    case .typeMismatch:
+      return "键类型不匹配"
+    case .smcUnavailable:
+      return "无法连接到 SMC"
+    case .unknown:
+      return "未知"
+    }
+  }
+}
+
+private extension SMCKeyListStage {
+  var descriptionText: String {
+    switch self {
+    case .ok:
+      return "成功"
+    case .serviceNotFound:
+      return "未找到 AppleSMC 服务"
+    case .serviceOpenFailed:
+      return "打开服务失败"
+    case .userClientOpenFailed:
+      return "userClient 打开失败"
+    case .keyCountFailed:
+      return "读取 Key 总数失败"
+    case .keyReadFailed:
+      return "读取 Key 列表失败"
+    case .unknown:
+      return "未知"
+    }
+  }
+}
+
+private extension SMCKeyReadStage {
+  var descriptionText: String {
+    switch self {
+    case .ok:
+      return "成功"
+    case .invalidKey:
+      return "键格式无效"
+    case .serviceNotFound:
+      return "未找到 AppleSMC 服务"
+    case .serviceOpenFailed:
+      return "打开服务失败"
+    case .userClientOpenFailed:
+      return "userClient 打开失败"
+    case .keyInfoFailed:
+      return "读取 KeyInfo 失败"
+    case .keyInfoInvalid:
+      return "KeyInfo 无效"
+    case .readFailed:
+      return "读取失败"
+    }
+  }
+}
+
+private extension SMCHelperKeyReadStage {
+  var descriptionText: String {
+    switch self {
+    case .ok:
+      return "成功"
+    case .invalidKey:
+      return "键格式无效"
+    case .serviceNotFound:
+      return "未找到 AppleSMC 服务"
+    case .serviceOpenFailed:
+      return "打开服务失败"
+    case .userClientOpenFailed:
+      return "userClient 打开失败"
+    case .keyInfoFailed:
+      return "读取 KeyInfo 失败"
+    case .keyInfoInvalid:
+      return "KeyInfo 无效"
+    case .readFailed:
+      return "读取失败"
+    case .unknown:
+      return "未知"
+    }
   }
 }

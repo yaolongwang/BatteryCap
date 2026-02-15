@@ -2,22 +2,16 @@ import Foundation
 
 /// SMC 特权安装管理
 final class SMCPrivilegeManager {
+  private static let missingScriptMessage = "未找到 Helper 服务脚本，请检查安装包是否完整或在项目根目录运行。"
+
   // MARK: - Public
 
   func installHelper() throws {
-    guard let scriptURL = SMCManualInstall.helperServiceScriptURL else {
-      throw BatteryError.unknown("未找到 Helper 服务脚本，请检查安装包是否完整或在项目根目录运行。")
-    }
-
-    try runScript(scriptURL, arguments: ["install"])
+    try runScript(requireHelperScriptURL(), arguments: ["install"])
   }
 
   func uninstallHelper() throws {
-    guard let scriptURL = SMCManualInstall.helperServiceScriptURL else {
-      throw BatteryError.unknown("未找到 Helper 服务脚本，请检查安装包是否完整或在项目根目录运行。")
-    }
-
-    try runScript(scriptURL, arguments: ["uninstall"])
+    try runScript(requireHelperScriptURL(), arguments: ["uninstall"])
   }
 
   // MARK: - Private
@@ -61,6 +55,13 @@ final class SMCPrivilegeManager {
 
       throw BatteryError.unknown("脚本执行失败（退出码 \(task.terminationStatus)）：\(scriptOutput)")
     }
+  }
+
+  private func requireHelperScriptURL() throws -> URL {
+    guard let scriptURL = SMCManualInstall.helperServiceScriptURL else {
+      throw BatteryError.unknown(Self.missingScriptMessage)
+    }
+    return scriptURL
   }
 
   private func shellQuote(_ value: String) -> String {

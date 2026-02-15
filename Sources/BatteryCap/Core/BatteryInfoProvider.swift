@@ -44,35 +44,7 @@ struct IOKitBatteryInfoProvider: BatteryInfoProviderProtocol, Sendable {
         continue
       }
 
-      guard
-        let currentCapacity = intValue(for: kIOPSCurrentCapacityKey, in: description),
-        let maxCapacity = intValue(for: kIOPSMaxCapacityKey, in: description),
-        maxCapacity > 0
-      else {
-        throw BatteryError.invalidPowerSourceData
-      }
-
-      let percentage = Int((Double(currentCapacity) / Double(maxCapacity)) * 100.0)
-      let cycleCount =
-        readCycleCountFromRegistry()
-        ?? intValue(for: RegistryKeys.cycleCountFallback, in: description)
-      let powerSourceState = stringValue(for: kIOPSPowerSourceStateKey, in: description)
-      let isCharging = boolValue(for: kIOPSIsChargingKey, in: description) ?? false
-      let isCharged = boolValue(for: kIOPSIsChargedKey, in: description) ?? false
-
-      let powerSource = mapPowerSource(from: powerSourceState)
-      let chargeState = mapChargeState(
-        isCharging: isCharging,
-        isCharged: isCharged,
-        powerSource: powerSource
-      )
-
-      return BatteryInfo(
-        chargePercentage: percentage,
-        cycleCount: cycleCount,
-        powerSource: powerSource,
-        chargeState: chargeState
-      )
+      return try parseBatteryInfo(from: description)
     }
 
     throw BatteryError.batteryNotFound
@@ -86,6 +58,37 @@ struct IOKitBatteryInfoProvider: BatteryInfoProviderProtocol, Sendable {
     }
 
     return typeValue == kIOPSInternalBatteryType
+  }
+
+  private func parseBatteryInfo(from description: PowerSourceDescription) throws -> BatteryInfo {
+    guard
+      let currentCapacity = intValue(for: kIOPSCurrentCapacityKey, in: description),
+      let maxCapacity = intValue(for: kIOPSMaxCapacityKey, in: description),
+      maxCapacity > 0
+    else {
+      throw BatteryError.invalidPowerSourceData
+    }
+
+    let percentage = Int((Double(currentCapacity) / Double(maxCapacity)) * 100.0)
+    let cycleCount =
+      readCycleCountFromRegistry()
+      ?? intValue(for: RegistryKeys.cycleCountFallback, in: description)
+    let powerSourceState = stringValue(for: kIOPSPowerSourceStateKey, in: description)
+    let isCharging = boolValue(for: kIOPSIsChargingKey, in: description) ?? false
+    let isCharged = boolValue(for: kIOPSIsChargedKey, in: description) ?? false
+    let powerSource = mapPowerSource(from: powerSourceState)
+    let chargeState = mapChargeState(
+      isCharging: isCharging,
+      isCharged: isCharged,
+      powerSource: powerSource
+    )
+
+    return BatteryInfo(
+      chargePercentage: percentage,
+      cycleCount: cycleCount,
+      powerSource: powerSource,
+      chargeState: chargeState
+    )
   }
 
   private func intValue(for key: String, in description: PowerSourceDescription) -> Int? {

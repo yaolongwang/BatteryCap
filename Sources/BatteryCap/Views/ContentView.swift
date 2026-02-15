@@ -3,6 +3,12 @@ import SwiftUI
 
 /// 主视图：显示电池状态和控制面板
 struct ContentView: View {
+  private static let timeFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.dateFormat = "HH:mm:ss"
+    return formatter
+  }()
+
   // MARK: - State
 
   @ObservedObject var viewModel: BatteryViewModel
@@ -36,9 +42,7 @@ struct ContentView: View {
     guard let lastUpdated = viewModel.lastUpdated else {
       return "--"
     }
-    let formatter = DateFormatter()
-    formatter.dateFormat = "HH:mm:ss"
-    return formatter.string(from: lastUpdated)
+    return Self.timeFormatter.string(from: lastUpdated)
   }
 
   // MARK: - View
@@ -93,9 +97,7 @@ struct ContentView: View {
                 get: { Double(viewModel.chargeLimit) },
                 set: { viewModel.updateChargeLimit(Int($0.rounded())) }
               ),
-              in: Double(
-                BatteryConstants.minChargeLimit)...Double(
-                  BatteryConstants.maxChargeLimit),
+              in: BatteryConstants.chargeLimitSliderRange,
               step: 1
             )
             .disabled(!viewModel.isLimitControlEnabled)
