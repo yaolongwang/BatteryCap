@@ -29,10 +29,10 @@ enum BatteryCapDiagnostics {
     print("SMC 写入开关: \(configuration.allowWrites ? "开启" : "关闭")")
     print("SMC 状态: \(configuration.status.message)")
     print("Helper 已安装: \(SMCHelperClient.isInstalled ? "是" : "否")")
-    if let scriptURL = SMCManualInstall.installScriptURL {
-      print("安装脚本: \(scriptURL.path)")
+    if let scriptURL = SMCManualInstall.helperServiceScriptURL {
+      print("Helper 脚本: \(scriptURL.path)")
     } else {
-      print("安装脚本: 未找到")
+      print("Helper 脚本: 未找到")
     }
 
     guard let chargingSwitch = configuration.chargingSwitch else {

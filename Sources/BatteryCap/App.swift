@@ -5,6 +5,10 @@ import SwiftUI
 @main
 struct BatteryCapEntry {
   static func main() {
+    if BatteryCapMaintenance.shouldRun {
+      BatteryCapMaintenance.run()
+      return
+    }
     if BatteryCapDiagnostics.shouldRun {
       BatteryCapDiagnostics.run()
       return

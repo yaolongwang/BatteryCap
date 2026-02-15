@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
+# 功能：构建可分发的 dist/BatteryCap.app（含主程序、Helper 与安装资源）。
 set -euo pipefail
+
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_APP="$ROOT_DIR/dist/BatteryCap.app"
@@ -57,7 +59,7 @@ chmod 755 "$MACOS_DIR/BatteryCap"
 cp -R "$MAIN_RESOURCES_DIR/." "$RESOURCES_DIR/"
 cp "$HELPER_EXEC" "$RESOURCES_DIR/BatteryCapHelper"
 chmod 755 "$RESOURCES_DIR/BatteryCapHelper"
-chmod 755 "$RESOURCES_DIR/install-helper.sh" "$RESOURCES_DIR/uninstall-helper.sh"
+chmod 755 "$RESOURCES_DIR/batterycap-service.sh"
 
 if command -v xcrun >/dev/null 2>&1; then
   "$ROOT_DIR/scripts/compile-app-icon.sh" || true

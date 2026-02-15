@@ -5,31 +5,35 @@ final class SMCPrivilegeManager {
   // MARK: - Public
 
   func installHelper() throws {
-    guard let scriptURL = SMCManualInstall.installScriptURL else {
-      throw BatteryError.unknown("未找到安装脚本，请检查安装包是否完整或在项目根目录运行。")
+    guard let scriptURL = SMCManualInstall.helperServiceScriptURL else {
+      throw BatteryError.unknown("未找到 Helper 服务脚本，请检查安装包是否完整或在项目根目录运行。")
     }
 
-    try runScript(scriptURL)
+    try runScript(scriptURL, arguments: ["install"])
   }
 
   func uninstallHelper() throws {
-    guard let scriptURL = SMCManualInstall.uninstallScriptURL else {
-      throw BatteryError.unknown("未找到卸载脚本，请检查安装包是否完整或在项目根目录运行。")
+    guard let scriptURL = SMCManualInstall.helperServiceScriptURL else {
+      throw BatteryError.unknown("未找到 Helper 服务脚本，请检查安装包是否完整或在项目根目录运行。")
     }
 
-    try runScript(scriptURL)
+    try runScript(scriptURL, arguments: ["uninstall"])
   }
 
   // MARK: - Private
 
-  private func runScript(_ scriptURL: URL) throws {
+  private func runScript(_ scriptURL: URL, arguments: [String]) throws {
     let task = Process()
     let stdoutPipe = Pipe()
     let stderrPipe = Pipe()
     task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
     task.standardOutput = stdoutPipe
     task.standardError = stderrPipe
-    let command = "/bin/bash \"\(scriptURL.path)\""
+    let quotedPath = shellQuote(scriptURL.path)
+    let quotedArguments = arguments.map { shellQuote($0) }.joined(separator: " ")
+    let command = quotedArguments.isEmpty
+      ? "/bin/bash \(quotedPath)"
+      : "/bin/bash \(quotedPath) \(quotedArguments)"
     let escapedCommand = command
       .replacingOccurrences(of: "\\", with: "\\\\")
       .replacingOccurrences(of: "\"", with: "\\\"")
@@ -57,5 +61,9 @@ final class SMCPrivilegeManager {
 
       throw BatteryError.unknown("脚本执行失败（退出码 \(task.terminationStatus)）：\(scriptOutput)")
     }
+  }
+
+  private func shellQuote(_ value: String) -> String {
+    "'\(value.replacingOccurrences(of: "'", with: "'\\''"))'"
   }
 }

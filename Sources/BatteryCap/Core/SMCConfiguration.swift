@@ -62,7 +62,7 @@ struct SMCConfiguration: Sendable {
       return .disabled("未找到可写的 SMC 键")
     }
     if !SMCHelperClient.isInstalled {
-      return .disabled("需要管理员安装写入组件（点击“授权写入”或运行 scripts/install-helper.sh）")
+      return .disabled("需要管理员安装写入组件（点击“授权写入”或运行 scripts/batterycap-service.sh install）")
     }
 
     switch resolved.result {

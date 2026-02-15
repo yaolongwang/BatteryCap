@@ -34,6 +34,12 @@ macOS 菜单栏电池管理工具：支持电量锁定、充电上限与状态�
 swift run
 ```
 
+## scripts 目录说明
+
+- `scripts/build-dist-app.sh`：构建 `dist/BatteryCap.app` 分发包，包含主程序、Helper、安装/卸载脚本与 plist。
+- `scripts/compile-app-icon.sh`：将 `BatteryCap.icon` 编译为 `Assets.car/.icns`，并在存在 `dist/BatteryCap.app` 时写入其资源目录。
+- `scripts/batterycap-service.sh`：开发态服务统一入口（子命令：`install`、`uninstall`、`purge-config`、`full-uninstall`）。
+
 ## 打包单 App（分发）
 
 ```bash
@@ -42,8 +48,7 @@ scripts/build-dist-app.sh
 
 脚本会在 `dist/BatteryCap.app` 生成可分发应用，并内置：
 
-- `install-helper.sh`
-- `uninstall-helper.sh`
+- `batterycap-service.sh`
 - `com.batterycap.helper.plist`
 - `BatteryCapHelper`
 
@@ -56,7 +61,7 @@ scripts/build-dist-app.sh
 ## 本地安装写入组件（必须）
 
 ```bash
-scripts/install-helper.sh
+scripts/batterycap-service.sh install
 ```
 
 ## 编译 macOS 26 `.icon` 应用图标
@@ -75,25 +80,48 @@ scripts/compile-app-icon.sh
 仅卸载特权 Helper：
 
 ```bash
-scripts/uninstall-helper.sh
+scripts/batterycap-service.sh uninstall
 ```
 
-卸载并清理用户配置：
+仅清理用户配置：
 
 ```bash
-scripts/uninstall-helper.sh -p
+scripts/batterycap-service.sh purge-config
 ```
 
 完全卸载（移除 App + 清理用户配置）：
 
 ```bash
-scripts/uninstall-helper.sh -x
+scripts/batterycap-service.sh full-uninstall
 ```
 
 查看帮助：
 
 ```bash
-scripts/uninstall-helper.sh -h
+scripts/batterycap-service.sh -h
+```
+
+## 卸载应用（尽量无残留）
+
+推荐按以下顺序操作：
+
+1. 打开 BatteryCap 设置，将“开机自启动”关闭。
+2. 在设置里的“Helper 服务”区域点击“卸载 Helper 服务”。
+   - 应用会先关闭“电量锁定”，再卸载 Helper。
+3. 删除 `/Applications/BatteryCap.app`。
+
+说明：
+
+- 完成以上步骤后，系统级 Helper 文件会被移除：
+  - `/Library/PrivilegedHelperTools/com.batterycap.helper`
+  - `/Library/LaunchDaemons/com.batterycap.helper.plist`
+- 用户设置文件 `~/Library/Preferences/com.batterycap.app.plist` 可能仍保留。
+  - 如需进一步清理，可使用 Pearcleaner 等卸载工具。
+
+一键卸载（脚本）：
+
+```bash
+scripts/batterycap-service.sh full-uninstall
 ```
 
 ## SMC 诊断（命令行）
@@ -110,7 +138,7 @@ swift run BatteryCap -- --smc-diagnose
 BATTERYCAP_DIAG=1 swift run
 ```
 
-如提示 Helper 诊断接口不可用，请重新运行 `scripts/install-helper.sh` 以更新特权组件。
+如提示 Helper 诊断接口不可用，请重新运行 `scripts/batterycap-service.sh install` 以更新特权组件。
 
 ## 工作原理（简述）
 
@@ -157,7 +185,7 @@ BATTERYCAP_DIAG=1 swift run
 ## 常见问题
 
 1. **提示“权限不足”**
-   - 先运行 `scripts/install-helper.sh` 重新安装 Helper
+   - 先运行 `scripts/batterycap-service.sh install` 重新安装 Helper
    - 或在应用内点击“授权写入”触发安装
    - 运行 `swift run BatteryCap -- --diagnose`，确认 `SMC 状态: 已启用特权写入`
 2. **锁定无效/无响应**

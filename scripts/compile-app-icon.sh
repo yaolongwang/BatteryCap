@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# 功能：编译应用图标资源，并在存在 dist app 时写入其 Resources。
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

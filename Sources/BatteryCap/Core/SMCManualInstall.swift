@@ -4,12 +4,8 @@ import Foundation
 
 /// 手动安装脚本定位
 enum SMCManualInstall {
-  static var installScriptURL: URL? {
-    scriptURL(inProjectPath: "scripts/install-helper.sh", bundleResource: "install-helper")
-  }
-
-  static var uninstallScriptURL: URL? {
-    scriptURL(inProjectPath: "scripts/uninstall-helper.sh", bundleResource: "uninstall-helper")
+  static var helperServiceScriptURL: URL? {
+    scriptURL(inProjectPath: "scripts/batterycap-service.sh", bundleResource: "batterycap-service")
   }
 
   private static func scriptURL(inProjectPath path: String, bundleResource: String) -> URL? {

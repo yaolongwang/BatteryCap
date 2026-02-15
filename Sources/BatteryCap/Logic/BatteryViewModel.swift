@@ -25,15 +25,15 @@ final class BatteryViewModel: ObservableObject {
   }
 
   var canRequestSmcWriteAccess: Bool {
-    smcStatus.needsPrivilege && SMCManualInstall.installScriptURL != nil
+    smcStatus.needsPrivilege && SMCManualInstall.helperServiceScriptURL != nil
   }
 
   var canInstallHelperService: Bool {
-    SMCManualInstall.installScriptURL != nil
+    SMCManualInstall.helperServiceScriptURL != nil
   }
 
   var canUninstallHelperService: Bool {
-    SMCManualInstall.uninstallScriptURL != nil
+    SMCManualInstall.helperServiceScriptURL != nil
   }
 
   // MARK: - Dependencies
@@ -160,12 +160,7 @@ final class BatteryViewModel: ObservableObject {
 
   func uninstallHelperService() {
     Task { [weak self] in
-      do {
-        try self?.privilegeManager.uninstallHelper()
-        self?.refreshHelperServiceStatus()
-      } catch {
-        self?.handle(error)
-      }
+      await self?.performHelperUninstall()
     }
   }
 
@@ -254,6 +249,27 @@ final class BatteryViewModel: ObservableObject {
   private func refreshHelperServiceStatus() {
     isHelperServiceInstalled = SMCHelperClient.isInstalled
     refreshSmcStatus()
+  }
+
+  private func performHelperUninstall() async {
+    isLimitControlEnabled = false
+    persistSettings()
+
+    if isControlSupported {
+      do {
+        try await controller.applyChargingMode(.normal)
+        lastAppliedMode = .normal
+      } catch {
+        handle(error)
+      }
+    }
+
+    do {
+      try privilegeManager.uninstallHelper()
+      refreshHelperServiceStatus()
+    } catch {
+      handle(error)
+    }
   }
 
   private func refreshLaunchAtLoginState() {
