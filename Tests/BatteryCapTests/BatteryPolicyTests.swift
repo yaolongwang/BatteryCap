@@ -12,7 +12,7 @@ final class BatteryPolicyTests: XCTestCase {
       launchAtLoginEnabled: false
     )
 
-    let mode = policy.desiredMode(currentCharge: 90, settings: settings)
+    let mode = policy.desiredMode(currentCharge: 90, settings: settings, lastAppliedMode: nil)
 
     XCTAssertEqual(mode, .normal)
   }
@@ -26,7 +26,7 @@ final class BatteryPolicyTests: XCTestCase {
       launchAtLoginEnabled: false
     )
 
-    let mode = policy.desiredMode(currentCharge: 60, settings: settings)
+    let mode = policy.desiredMode(currentCharge: 60, settings: settings, lastAppliedMode: nil)
 
     XCTAssertEqual(mode, .chargeLimit(80))
   }
@@ -40,10 +40,10 @@ final class BatteryPolicyTests: XCTestCase {
       launchAtLoginEnabled: false
     )
 
-    let modeAtLimit = policy.desiredMode(currentCharge: 80, settings: settings)
-    let modeAboveLimit = policy.desiredMode(currentCharge: 95, settings: settings)
+    let modeAtLimit = policy.desiredMode(currentCharge: 80, settings: settings, lastAppliedMode: nil)
+    let modeAboveLimit = policy.desiredMode(currentCharge: 95, settings: settings, lastAppliedMode: nil)
 
-    XCTAssertEqual(modeAtLimit, .hold(80))
+    XCTAssertEqual(modeAtLimit, .chargeLimit(80))
     XCTAssertEqual(modeAboveLimit, .hold(95))
   }
 }

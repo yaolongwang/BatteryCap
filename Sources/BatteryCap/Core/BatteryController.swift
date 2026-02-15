@@ -31,17 +31,17 @@ protocol BatteryControllerProtocol: Sendable {
 
 /// SMC 控制器实现（统一通过 Helper 写入）
 struct SMCBatteryController: BatteryControllerProtocol, Sendable {
-  private let configuration: SMCConfiguration
-  let isSupported: Bool
+  var isSupported: Bool {
+    SMCConfiguration.load().status.isEnabled
+  }
   private let helperClient: SMCHelperClient
 
-  init(configuration: SMCConfiguration = .load()) {
-    self.configuration = configuration
-    self.isSupported = configuration.status.isEnabled
+  init() {
     self.helperClient = SMCHelperClient()
   }
 
   func applyChargingMode(_ mode: ChargingMode) async throws {
+    let configuration = SMCConfiguration.load()
     guard isSupported else {
       throw BatteryError.unsupportedOperation
     }

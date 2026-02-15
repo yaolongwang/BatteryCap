@@ -24,6 +24,9 @@ fi
 
 if [[ "$BUNDLE_MODE" -eq 1 ]]; then
   HELPER_EXEC="${SCRIPT_DIR}/BatteryCapHelper"
+  if [[ ! -f "$HELPER_EXEC" && -f "${SCRIPT_DIR}/../MacOS/BatteryCapHelper" ]]; then
+    HELPER_EXEC="${SCRIPT_DIR}/../MacOS/BatteryCapHelper"
+  fi
   PLIST_SOURCE="${SCRIPT_DIR}/com.batterycap.helper.plist"
 else
   ROOT_DIR="$(cd "${SCRIPT_DIR}/../../.." && pwd)"

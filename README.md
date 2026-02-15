@@ -8,7 +8,7 @@ macOS 菜单栏电池管理工具：支持电量锁定、充电上限与状态�
 - 电量锁定与充电上限：达到上限后暂停充电，低于下限后恢复
 - 立即刷新：手动触发一次电池信息与控制状态刷新
 - SMC 写入状态提示：未授权时提供“授权写入”按钮
-- 设置面板：开机自启动、退出时保持当前状态、恢复系统默认、退出
+- 设置面板：开机自启动、退出时保持当前状态、Helper 安装/卸载、恢复系统默认、退出
 
 ## 开发规划
 
@@ -26,13 +26,32 @@ macOS 菜单栏电池管理工具：支持电量锁定、充电上限与状态�
 锁定关，充电暂停：batteryblock
 锁定开，放电中：minus.plus.batteryblock.fill
 锁定关，放电中：minus.plus.batteryblock
-- [ ] 界面上卸载和安装helper服务按钮
+- [x] 界面上卸载和安装helper服务按钮
 
 ## 运行（开发）
 
 ```bash
 swift run
 ```
+
+## 打包单 App（分发）
+
+```bash
+scripts/build-dist-app.sh
+```
+
+脚本会在 `dist/BatteryCap.app` 生成可分发应用，并内置：
+
+- `install-helper.sh`
+- `uninstall-helper.sh`
+- `com.batterycap.helper.plist`
+- `BatteryCapHelper`
+
+建议分发与使用流程：
+
+1. 将 `BatteryCap.app` 拷贝到“应用程序”目录。
+2. 首次打开时按系统提示进行放行（未知来源应用）。
+3. 进入应用“设置”面板，使用 Helper 服务区域的安装/卸载按钮。
 
 ## 本地安装写入组件（必须）
 
@@ -49,7 +68,7 @@ scripts/compile-app-icon.sh
 该脚本会使用 `xcrun actool` 从 `Sources/BatteryCap/Resources/BatteryCap.icon` 生成 `Assets.car`（以及回退用 `.icns`），并在存在 `dist/BatteryCap.app` 时自动拷贝到 `Contents/Resources`。
 
 安装过程中会弹出管理员授权，请输入密码。
-也可以在应用内点击“授权写入”触发安装（要求项目根目录存在并可执行该脚本）。
+也可以在应用内点击“授权写入”或“安装 Helper 服务”触发安装。
 
 ## 卸载/清理写入组件
 
@@ -125,6 +144,7 @@ BATTERYCAP_DIAG=1 swift run
 
 - 开机自启动
 - 退出时保持当前状态
+- Helper 安装/卸载（含当前状态显示）
 - 恢复系统默认
 - 退出
 

@@ -16,6 +16,7 @@ final class BatteryViewModel: ObservableObject {
   @Published private(set) var launchAtLoginMessage: String?
   @Published var errorMessage: String?
   @Published private(set) var smcStatus: SMCWriteStatus
+  @Published private(set) var isHelperServiceInstalled: Bool
 
   // MARK: - Derived State
 
@@ -25,6 +26,14 @@ final class BatteryViewModel: ObservableObject {
 
   var canRequestSmcWriteAccess: Bool {
     smcStatus.needsPrivilege && SMCManualInstall.installScriptURL != nil
+  }
+
+  var canInstallHelperService: Bool {
+    SMCManualInstall.installScriptURL != nil
+  }
+
+  var canUninstallHelperService: Bool {
+    SMCManualInstall.uninstallScriptURL != nil
   }
 
   // MARK: - Dependencies
@@ -63,6 +72,7 @@ final class BatteryViewModel: ObservableObject {
     self.isLaunchAtLoginEnabled = launchState.isEnabled
     self.launchAtLoginMessage = launchState.message
     self.smcStatus = SMCConfiguration.load().status
+    self.isHelperServiceInstalled = SMCHelperClient.isInstalled
 
     self.monitor.onPowerSourceChange = { [weak self] in
       self?.refreshNow()
@@ -82,6 +92,7 @@ final class BatteryViewModel: ObservableObject {
     monitor.start()
     startRefreshTimer()
     refreshLaunchAtLoginState()
+    refreshHelperServiceStatus()
     refreshNow()
   }
 
@@ -90,6 +101,9 @@ final class BatteryViewModel: ObservableObject {
   func refreshNow() {
     Task { [weak self] in
       await self?.refresh()
+      await MainActor.run {
+        self?.refreshHelperServiceStatus()
+      }
     }
   }
 
@@ -136,7 +150,19 @@ final class BatteryViewModel: ObservableObject {
     Task { [weak self] in
       do {
         try self?.privilegeManager.installHelper()
-        self?.refreshSmcStatus()
+        self?.refreshHelperServiceStatus()
+        self?.applyControlIfNeeded(force: true)
+      } catch {
+        self?.handle(error)
+      }
+    }
+  }
+
+  func uninstallHelperService() {
+    Task { [weak self] in
+      do {
+        try self?.privilegeManager.uninstallHelper()
+        self?.refreshHelperServiceStatus()
       } catch {
         self?.handle(error)
       }
@@ -223,6 +249,11 @@ final class BatteryViewModel: ObservableObject {
 
   private func refreshSmcStatus() {
     smcStatus = SMCConfiguration.load().status
+  }
+
+  private func refreshHelperServiceStatus() {
+    isHelperServiceInstalled = SMCHelperClient.isInstalled
+    refreshSmcStatus()
   }
 
   private func refreshLaunchAtLoginState() {

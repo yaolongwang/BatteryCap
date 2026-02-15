@@ -228,6 +228,53 @@ struct ContentView: View {
 
       Divider()
 
+      VStack(alignment: .leading, spacing: 8) {
+        HStack(alignment: .firstTextBaseline) {
+          Text("Helper 服务")
+            .font(.subheadline)
+            .fontWeight(.semibold)
+
+          Spacer()
+
+          if viewModel.isHelperServiceInstalled {
+            Button("卸载 Helper 服务") {
+              viewModel.uninstallHelperService()
+            }
+            .buttonStyle(.bordered)
+            .focusable(false)
+            .disabled(!viewModel.canUninstallHelperService)
+          } else {
+            Button("安装 Helper 服务") {
+              viewModel.requestSmcWriteAccess()
+            }
+            .buttonStyle(.bordered)
+            .focusable(false)
+            .disabled(!viewModel.canInstallHelperService)
+          }
+        }
+
+        HStack(alignment: .firstTextBaseline) {
+          Text(viewModel.isHelperServiceInstalled ? "当前状态：已安装" : "当前状态：未安装")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+
+          Spacer()
+
+          Text(viewModel.isHelperServiceInstalled ? "卸载将触发系统管理员授权。" : "安装将触发系统管理员授权。")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.trailing)
+        }
+
+        if !viewModel.canInstallHelperService && !viewModel.canUninstallHelperService {
+          Text("未找到安装/卸载脚本，请检查应用资源或项目脚本目录。")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+        }
+      }
+
+      Divider()
+
       HStack {
         Button("恢复系统默认") {
           viewModel.restoreSystemDefault()

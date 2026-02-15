@@ -8,7 +8,7 @@ enum BatteryTerminationController {
       return
     }
 
-    let controller = SMCBatteryController(configuration: .load())
+    let controller = SMCBatteryController()
     guard controller.isSupported else {
       return
     }

@@ -13,11 +13,15 @@ final class SMCHelperClient: @unchecked Sendable {
   // MARK: - Constants
 
   static let machServiceName = "com.batterycap.helper"
+  static let helperBinaryPath = "/Library/PrivilegedHelperTools/\(machServiceName)"
+  static let launchDaemonPlistPath = "/Library/LaunchDaemons/\(machServiceName).plist"
 
   // MARK: - Status
 
   static var isInstalled: Bool {
-    FileManager.default.fileExists(atPath: "/Library/PrivilegedHelperTools/\(machServiceName)")
+    let fileManager = FileManager.default
+    return fileManager.fileExists(atPath: helperBinaryPath)
+      && fileManager.fileExists(atPath: launchDaemonPlistPath)
   }
 
   // MARK: - Operations
