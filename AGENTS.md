@@ -1,140 +1,153 @@
-# BatteryCap - AI Agent 开发指南
+# BatteryCap - AGENTS 指南（给 AI）
 
-## 1. 项目概览
+本文件是 AI 修改代码时必须遵循的“隐性规则”与项目约束；README 是给人类用户的使用说明。
 
-**BatteryCap** 是一个 macOS 菜单栏应用程序，通过限制 MacBook 的电池充电上限，保护电池健康。
-它通过与系统的 SMC (System Management Controller) 交互来管理电源流向。
+## 1) 项目目标与边界
 
-### 功能清单
+**BatteryCap** 是一个 macOS 菜单栏应用：通过 SMC + 特权 Helper 管理充电开关，实现电量锁定与上限控制。
 
-#### Phase 1: 核心功能
+当前目标平台与形态：
 
-**目标平台**: Apple Silicon (M1/M2/M3/M4...)
-**系统要求**: macOS 26 (Tahoe) 及以上
-**形式**: macOS 菜单栏应用 (Menu Bar App)
+- Apple Silicon (M1/M2/M3/M4...)
+- macOS 26 (Tahoe)+
+- Menu Bar App
 
-1. **图形化控制界面**
-   - **电量锁定开关 (Toggle)**:
-     - **开启**: 达到上限后停止充电；低于下限后恢复充电（不强制放电）。
-     - **关闭**: 恢复系统默认充电策略（不再干预）。
-   - **充电上限设置 (Slider)**: 设置具体的充电百分比限制（配合开关使用，当达到限制时自动停充）。
-2. **状态可视化**
-   - 显示当前电池电量百分比。
-   - 显示供电状态（电池供电 / 适配器供电）。
-   - 显示电池状态（正在充电 / 充电暂停 / 放电中）。
-   - 显示电池循环次数。
-3. **充电控制体验增强（轻量级）**
-   - 阈值滞回：引入上下限区间，减少频繁切换。
-4. **设置菜单聚合**
-   - 主界面提供“设置”入口，集中管理开机自启动、退出行为、恢复默认与退出。
+Phase 1 目标能力：
 
-#### Phase 2: 未来规划
+1. 图形化控制（电量锁定开关 + 上限滑块）
+2. 状态可视化（电量、供电、充电状态、循环次数）
+3. 阈值滞回（减少频繁切换）
+4. 设置聚合（开机自启动、退出行为、恢复默认、Helper 安装/卸载、退出）
 
-1. **滞回区间可调**：在设置中提供阈值滞回区间的可视化调节。
-2. **一键暂停充电**：立即停充并锁定当前电量。
+Phase 2 规划（保留）：
 
-## 2. 环境与构建命令
+1. 一键暂停充电
 
-### 开发环境
+## 2) 文档分工（必须遵守）
 
-- **语言**: Swift 6.2+
-- **平台**: macOS 26+ (Target)
-- **工具链**: Swift Package Manager (SPM)
+- README：给人看，讲“是什么、怎么跑、怎么用”。
+- AGENTS：给 AI 看，讲“怎么安全改、不能做什么、改完必须验证什么”。
 
-### 已验证环境
+修改文档时，保持这个边界，不要把 AI 规则写进 README，也不要把用户上手说明塞进 AGENTS。
 
-设备：Mac16,13 / macOS 26.2 (Build 25C56)
+## 3) 环境与命令
+
+开发环境：
+
+- Swift 6.2+
+- Swift Package Manager
+- macOS 26+
+
+已验证环境：Mac16,13 / macOS 26.2 (25C56)
 
 - `CHTE` 存在并可读取
-- 通过特权 Helper 写入充电开关路径可用
+- 特权 Helper 写入链路可用
 
-### 核心命令
+核心命令：
 
-| 动作               | 命令                                           | 说明                    |
-| ------------------ | ---------------------------------------------- | ----------------------- |
-| **构建 (Debug)**   | `swift build`                                  | 编译调试版本            |
-| **构建 (Release)** | `swift build -c release`                       | 编译优化后的发布版本    |
-| **运行**           | `swift run`                                    | 编译并执行主入口程序    |
-| **运行 (Release)** | `swift run -c release`                         |                         |
-| **测试**           | `swift test`                                   | 已包含测试目标          |
-| **单测运行**       | `swift test --filter <TestClass>/<testMethod>` | 运行指定的测试用例      |
-| **清理**           | `swift package clean`                          | 清除构建产物            |
-| **更新依赖**       | `swift package update`                         | 更新 SPM 依赖包         |
-| **格式化**         | `swift format . -i`                            | 需要安装 `swift-format` |
+| 动作           | 命令                                           | 说明                  |
+| -------------- | ---------------------------------------------- | --------------------- |
+| 构建 (Debug)   | `swift build`                                  | 编译调试版本          |
+| 构建 (Release) | `swift build -c release`                       | 编译优化发布版本      |
+| 运行           | `swift run`                                    | 运行主程序            |
+| 运行 (Release) | `swift run -c release`                         | 运行发布构建          |
+| 测试           | `swift test`                                   | 执行测试              |
+| 单测运行       | `swift test --filter <TestClass>/<testMethod>` | 执行指定测试          |
+| 清理           | `swift package clean`                          | 清除构建产物          |
+| 更新依赖       | `swift package update`                         | 更新 SPM 依赖         |
+| 格式化         | `swift format . -i`                            | 需安装 `swift-format` |
 
-## 3. 代码风格与规范
+分发脚本（当前）：
 
-### 基本原则
+- `scripts/package-dist.sh app`：生成 `dist/BatteryCap.app`
+- `scripts/package-dist.sh dmg`：生成 `dist/BatteryCap.app` + `dist/BatteryCap.dmg`
+- `scripts/batterycap-service.sh`：开发态服务入口（转发到资源脚本）
 
-- **Swift API 设计指南**: 严格遵循 Apple 官方设计指南。
-- **清晰优于简洁**: 方法名应具有描述性（例如用 `setChargeLimit(to:)` 而不是 `setLimit()`）。
-- **现代 Swift**: 尽可能使用 Swift 6 特性（如结构化并发 `async/await`）。除非为了兼容旧 API，否则避免使用 GCD/DispatchQueue。
+## 4) 代码风格与安全规则
 
-### 命名规范
+基础原则：
 
-- **类型/类/结构体**: `UpperCamelCase` (大驼峰，如 `BatteryManager`)。
-- **函数/变量**: `lowerCamelCase` (小驼峰，如 `currentChargeLevel`)。
-- **常量**: `lowerCamelCase` (static let)，通常定义在相关类型内部。
-- **缩写**: 视为单词处理（例如 `SmcKey`，而不是 `SMCKey`）。
+- 遵循 Swift API Design Guidelines
+- 清晰优于简洁
+- 优先现代 Swift（`async/await`）
 
-### 格式化
+命名与格式：
 
-- **缩进**: 4 个空格。
-- **行宽**: 软限制 120 字符。
-- **大括号**: K&R 风格（左大括号不换行）。
-- **引用 (Imports)**:
-  1. 系统框架 (`import Foundation`, `import IOKit`)
-  2. 第三方库
-  3. 内部模块
-     (组内按字母顺序排列)
+- 类型：`UpperCamelCase`
+- 变量/函数：`lowerCamelCase`
+- 缩进 4 空格、行宽软限制 120
+- import 顺序：系统 -> 第三方 -> 内部
 
-### 类型安全与错误处理
+类型安全与错误处理：
 
-- **强制解包**: **禁止**。严禁使用 `!` (强制解包) 或 `try!`。
-  - _例外_: 单元测试的 setup 或编译期显而易见的安全常量。
-- **可选值绑定**: 推荐使用 `guard let` 提前退出，局部作用域使用 `if let`。
-- **错误处理**: 使用 `throw` 和 `do-catch` 块。定义自定义枚举 `enum BatteryError: Error`。
-- **SMC/IOKit 交互**: 本项目涉及 `UnsafePointer` 操作。必须小心手动管理内存。使用 `defer` 确保资源（如 IOObjectRelease）被释放。
+- 禁止 `!` 与 `try!`（测试 setup 或编译期常量除外）
+- 优先 `guard let`
+- 使用 `throw` + `do-catch`
+- SMC/IOKit 指针操作必须保证资源释放（`defer`）
 
-### 文档注释
+硬件安全：
 
-- 使用 `///` 进行文档注释 (DocC 格式)。
-- 必须为所有公开方法（尤其是涉及硬件交互的方法）编写文档。
-- 明确标注硬件风险（例如：“此函数会写入 SMC 键值...”）。
+- 任何写入 SMC 的修改都要复核 key 与数据类型
+- 禁止引入“魔法数字”，SMC key/常量集中定义
 
-## 4. 测试指南
+## 5) 文件结构与关键路径
 
-- **单元测试**: 针对不接触硬件的逻辑（例如数值解析、CLI 参数处理）。
-- **集成/Mock**: 由于无法在 CI 或所有机器上测试 SMC 写入，必须创建 `BatteryControllerProtocol` 和 `MockBatteryController` 用于测试。
-- **测试命名**: `testMethodName_Condition_ExpectedResult` (测试方法名*条件*预期结果)。
+- `Package.swift`: 主包配置
+- `scripts/`: 人工可执行脚本
+  - `package-dist.sh`
+  - `compile-app-icon.sh`
+  - `batterycap-service.sh`（开发态转发入口）
+- `Sources/BatteryCap/`
+  - `App.swift`: 主入口 + 诊断/维护分流
+  - `Views/`: UI
+  - `Logic/`: 策略与状态管理
+  - `Core/`: SMC/IOKit、特权调用与诊断
+  - `Resources/`: 分发内置脚本与 plist
+    - `batterycap-service.sh`（真实执行脚本）
+    - `com.batterycap.helper.plist`
+- `Subpackages/BatteryCapHelper/`: 特权 Helper 子包
+- `Tests/`: 单测
 
-## 5. 文件结构
+## 6) 测试与验证（AI 必做）
 
-- `Package.swift`: SPM 配置清单。
-- `scripts/`: 工具脚本（包含 `install-helper.sh`）。
-- `Sources/BatteryCap/`: 源代码目录。
-  - `App.swift`: 程序入口 (`@main`) 与诊断分流。
-  - `Info.plist`: 主应用 Info.plist（链接为可执行内嵌资源）。
-  - `Views/`: 菜单栏 UI 与设置面板。
-  - `Core/`: 底层 SMC/IOKit 封装与诊断。
-  - `Logic/`: 业务逻辑（阈值判断、状态管理）。
-  - `Resources/`: Helper 相关资源。
-- `Subpackages/BatteryCapHelper/`: 特权 Helper 子包。
-  - `Package.swift`: Helper 子包的 SPM 配置。
-  - `Sources/BatteryCapHelper/`: Helper 代码目录。
-    - `main.swift`: Helper 入口。
-    - `Info.plist`: Helper Info.plist。
-- `Tests/`: 单元测试目录。
+每次修改后至少执行：
 
-## 6. Git 与工作流
+1. `swift build`
+2. `swift test`
+3. 若改到分发脚本，执行对应脚本（如 `scripts/package-dist.sh app` 或 `dmg`）
 
-- **提交信息**: 使用 Conventional Commits 规范 (例如: `feat: add SMC reader`, `fix: correct percentage calc`)。
-- **依赖管理**: 优先使用 Swift Package Manager。如果需要系统工具，假设使用 Homebrew。
+测试策略：
 
-## 7. 给 AI Agent 的特别规则
+- 业务逻辑优先单测
+- 硬件相关逻辑优先通过 `BatteryControllerProtocol` + Mock 测试
+- 测试命名：`testMethodName_Condition_ExpectedResult`
 
-1. **中文交流**: 无论是回答用户提问还是进行内部推理，**必须使用中文**。不要使用英文回复用户。
-2. **安全第一**: 编写与 SMC 交互的代码时，必须反复核对键值（Key）。向 SMC 写入错误的值可能导致硬件损坏。
-3. **Mock 优先**: 总是建议为硬件交互创建 Protocol 抽象，以便安全测试。
-4. **拒绝魔法数字**: 将 SMC 键值和常量定义在专门的 `Constants` 或 `SMCKeys` 结构体中。
-5. 每次修改完代码都要进行编译。
+## 7) Git 与工作流
+
+- Commit message 用 Conventional Commits
+- 依赖优先 SPM
+
+## 8) AI 特别规则（强制）
+
+1. 全程中文交流。
+2. 不确定 SMC 行为时先查现有实现，再改。
+3. 优先最小改动，不做无关重构。
+4. 每次改动后必须编译（至少 `swift build`）。
+5. 涉及脚本改动时必须做 `bash -n` 语法检查。
+
+## 9) 历史需求记录（保留信息，不作为 README 主体）
+
+状态栏动态图标需求记录：
+
+- 电量锁定开为实心、关为空心
+- 充电状态图标：
+  - 正在充电：闪电
+  - 充电暂停：空白
+  - 放电中：减加
+- 6 种组合：
+  - 锁定开 + 正在充电：`bolt.batteryblock.fill`
+  - 锁定关 + 正在充电：`bolt.batteryblock`
+  - 锁定开 + 充电暂停：`batteryblock.fill`
+  - 锁定关 + 充电暂停：`batteryblock`
+  - 锁定开 + 放电中：`minus.plus.batteryblock.fill`
+  - 锁定关 + 放电中：`minus.plus.batteryblock`
