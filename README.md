@@ -36,14 +36,14 @@ swift run
 
 ## scripts 目录说明
 
-- `scripts/build-dist-app.sh`：构建 `dist/BatteryCap.app` 分发包，包含主程序、Helper、安装/卸载脚本与 plist。
+- `scripts/package-dist.sh`：构建分发产物（`dist/BatteryCap.app` / `dist/BatteryCap.dmg`），包含主程序、Helper 与资源。
 - `scripts/compile-app-icon.sh`：将 `BatteryCap.icon` 编译为 `Assets.car/.icns`，并在存在 `dist/BatteryCap.app` 时写入其资源目录。
 - `scripts/batterycap-service.sh`：开发态服务统一入口（子命令：`install`、`uninstall`、`purge-config`、`full-uninstall`）。
 
 ## 打包单 App（分发）
 
 ```bash
-scripts/build-dist-app.sh
+scripts/package-dist.sh
 ```
 
 脚本会在 `dist/BatteryCap.app` 生成可分发应用，并内置：
