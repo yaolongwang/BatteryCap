@@ -87,12 +87,23 @@ is_safe_user_home_path() {
 
 resolve_user_home() {
   local target_user="$1"
-  local user_home
+  local user_home=""
 
-  user_home="$(cd ~"$target_user" 2>/dev/null && pwd)" || {
+  if [[ -n "${SUDO_HOME-}" && "${SUDO_USER-}" == "$target_user" ]]; then
+    user_home="$SUDO_HOME"
+  fi
+
+  if [[ -z "$user_home" ]]; then
+    user_home="$(
+      dscl . -read "/Users/$target_user" NFSHomeDirectory 2>/dev/null \
+        | awk 'NR == 1 { print $2 }'
+    )"
+  fi
+
+  if [[ -z "$user_home" ]]; then
     warn "未能定位用户目录：$target_user"
     return 1
-  }
+  fi
 
   if [[ ! -d "$user_home" ]]; then
     warn "用户目录不存在：$user_home"
