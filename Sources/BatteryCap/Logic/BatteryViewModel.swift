@@ -244,6 +244,10 @@ final class BatteryViewModel: ObservableObject {
 
   private func refreshHelperServiceStatus() {
     isHelperServiceInstalled = SMCHelperClient.isInstalled
+    if !isHelperServiceInstalled, isLimitControlEnabled {
+      isLimitControlEnabled = false
+      persistSettings()
+    }
     refreshSmcStatus()
   }
 
@@ -290,6 +294,11 @@ final class BatteryViewModel: ObservableObject {
   // MARK: - Helpers
 
   private func handle(_ error: Error) {
+    if let batteryError = error as? BatteryError, case .controllerUnavailable = batteryError {
+      errorMessage = nil
+      refreshHelperServiceStatus()
+      return
+    }
     errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
   }
 

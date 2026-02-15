@@ -17,6 +17,14 @@ fatal() {
   exit 1
 }
 
+clear_quarantine_if_present() {
+  local target_path="$1"
+  if ! command -v xattr >/dev/null 2>&1; then
+    return
+  fi
+  xattr -d com.apple.quarantine "$target_path" 2>/dev/null || true
+}
+
 usage() {
   cat <<'EOF'
 用法:
@@ -196,6 +204,8 @@ install_helper() {
   mkdir -p /Library/PrivilegedHelperTools /Library/LaunchDaemons
   install -m 755 -o root -g wheel "$helper_exec" "$BIN_DEST"
   install -m 644 -o root -g wheel "$plist_source" "$PLIST_DEST"
+  clear_quarantine_if_present "$BIN_DEST"
+  clear_quarantine_if_present "$PLIST_DEST"
   log "已安装 Helper：$BIN_DEST"
   log "已安装 LaunchDaemon：$PLIST_DEST"
 
