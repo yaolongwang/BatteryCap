@@ -7,9 +7,14 @@ enum SMCManualInstall {
   static var installScriptURL: URL? {
     let cwd = FileManager.default.currentDirectoryPath
     let url = URL(fileURLWithPath: cwd).appendingPathComponent("scripts/install-helper.sh")
-    guard FileManager.default.isExecutableFile(atPath: url.path) else {
-      return nil
+    if FileManager.default.isExecutableFile(atPath: url.path) {
+      return url
     }
-    return url
+
+    if let bundleURL = Bundle.main.url(forResource: "install-helper", withExtension: "sh") {
+      return bundleURL
+    }
+
+    return nil
   }
 }

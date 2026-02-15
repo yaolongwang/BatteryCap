@@ -40,6 +40,14 @@ swift run
 scripts/install-helper.sh
 ```
 
+## 编译 macOS 26 `.icon` 应用图标
+
+```bash
+scripts/compile-app-icon.sh
+```
+
+该脚本会使用 `xcrun actool` 从 `Sources/BatteryCap/Resources/BatteryCap.icon` 生成 `Assets.car`（以及回退用 `.icns`），并在存在 `dist/BatteryCap.app` 时自动拷贝到 `Contents/Resources`。
+
 安装过程中会弹出管理员授权，请输入密码。
 也可以在应用内点击“授权写入”触发安装（要求项目根目录存在并可执行该脚本）。
 
