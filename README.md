@@ -32,14 +32,15 @@ BatteryCap 是一个轻量级 MacBook 菜单栏电池管理工具，通过“电
 
 ## 安装与使用
 
-1. 将 `BatteryCap.app` 放入“应用程序”目录。
+1. 打开`BatteryCap.dmg`，将 `BatteryCap.app` 拖入`Applications`目录。
 2. 首次打开按系统提示放行。
-3. 在设置中安装 Helper 服务并开启电量锁定。
+3. 在`设置`中**安装 Helper 服务**。
+4. 开启电量锁定。
 
 ## 常见问题
 
 1. 提示“权限不足”
-   - 在应用内点击“授权写入”，或执行：
+   - 在`主界面`->`设置`点击`安装Helper服务`按钮，或执行：
    - `sudo "/Applications/BatteryCap.app/Contents/Resources/batterycap-service.sh" install`
 2. 锁定无效 / 无响应
    - 确认设备处于外接电源
@@ -50,13 +51,13 @@ BatteryCap 是一个轻量级 MacBook 菜单栏电池管理工具，通过“电
 
 ## 卸载
 
-一键完整卸载（推荐）：
+一键卸载命令（推荐）：
 
 ```bash
 sudo "/Applications/BatteryCap.app/Contents/Resources/batterycap-service.sh" full-uninstall
 ```
 
-手动流程：
+手动卸载：
 
 1. 在 BatteryCap 设置里关闭“开机自启动”。
 2. 在设置里的“Helper 服务”区域点击“卸载 Helper 服务”（会先关闭电量锁定）。
@@ -76,7 +77,7 @@ sudo "/Applications/BatteryCap.app/Contents/Resources/batterycap-service.sh" ful
 - `scripts/package-dist.sh app`：构建 `dist/BatteryCap.app`
 - `scripts/package-dist.sh dmg`：构建 `dist/BatteryCap.app` 与 `dist/BatteryCap.dmg`
 
-## SMC 诊断
+### SMC 诊断
 
 ```bash
 swift run BatteryCap -- --diagnose
