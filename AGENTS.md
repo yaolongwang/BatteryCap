@@ -31,7 +31,6 @@
 
 - 遵循 Swift API Design Guidelines，优先可读性与最小改动。
 - 类型 `UpperCamelCase`，变量/函数 `lowerCamelCase`。
-- 缩进 4 空格，行宽软限制 120。
 - `import` 顺序：系统 -> 第三方 -> 内部。
 
 类型与错误处理：
@@ -65,10 +64,11 @@
 
 每次改动后至少执行：
 
-1. `swift build`
-2. `swift test`
-3. 若改动了 shell 脚本：`bash -n <script>`
-4. 若改动了分发脚本：执行对应打包命令（`scripts/package-dist.sh app` 或 `scripts/package-dist.sh dmg`）
+1. `swift format --in-place --recursive --parallel Package.swift Sources Tests Subpackages`（使用工具链默认配置）
+2. `swift build`
+3. `swift test`
+4. 若改动了 shell 脚本：`bash -n <script>`
+5. 若改动了分发脚本：执行对应打包命令（`scripts/package-dist.sh app` 或 `scripts/package-dist.sh dmg`）
 
 测试约定：
 
