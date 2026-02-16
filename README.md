@@ -84,8 +84,9 @@ sudo "/Applications/BatteryCap.app/Contents/Resources/batterycap-service.sh" ful
 常用脚本：
 
 - `scripts/batterycap-service.sh`：开发态 Helper 安装/卸载入口
-- `scripts/package-dist.sh app`：构建 `dist/BatteryCap.app`
-- `scripts/package-dist.sh dmg`：构建 `dist/BatteryCap.app` 与 `dist/BatteryCap.dmg`
+- `scripts/build-dist.sh icon`：编译图标资源，并在存在 `dist/BatteryCap.app` 时写入图标文件
+- `scripts/build-dist.sh app`：构建 `dist/BatteryCap.app`
+- `scripts/build-dist.sh dmg`：构建 `dist/BatteryCap.app` 与 `dist/BatteryCap.dmg`
 
 ### SMC 诊断
 

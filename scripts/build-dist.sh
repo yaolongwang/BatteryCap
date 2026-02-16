@@ -1,21 +1,31 @@
 #!/usr/bin/env bash
-# 功能：构建分发产物（app/dmg），含主程序、Helper 与安装资源。
+# 功能：统一构建图标与分发产物（icon/app/dmg）。
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
 DIST_DIR="$ROOT_DIR/dist"
-DIST_APP="$ROOT_DIR/dist/BatteryCap.app"
-DIST_DMG="$ROOT_DIR/dist/BatteryCap.dmg"
+DIST_APP="$DIST_DIR/BatteryCap.app"
+DIST_DMG="$DIST_DIR/BatteryCap.dmg"
 DMG_STAGE_DIR="$ROOT_DIR/.build/dist-dmg"
+
 CONTENTS_DIR="$DIST_APP/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
 RESOURCES_DIR="$CONTENTS_DIR/Resources"
+DIST_RESOURCES_DIR="$RESOURCES_DIR"
+DIST_INFO_PLIST="$CONTENTS_DIR/Info.plist"
+
 MAIN_INFO_PLIST="$ROOT_DIR/Sources/BatteryCap/Info.plist"
 MAIN_RESOURCES_DIR="$ROOT_DIR/Sources/BatteryCap/Resources"
 HELPER_PACKAGE_DIR="$ROOT_DIR/Subpackages/BatteryCapHelper"
+
 MAIN_SCRATCH_PATH="$ROOT_DIR/.build/dist-main"
 HELPER_SCRATCH_PATH="$ROOT_DIR/.build/dist-helper"
-STRICT_MODE=0
+
+ICON_SOURCE="$ROOT_DIR/assets/BatteryCap.icon"
+ICON_BUILD_DIR="$ROOT_DIR/.build/icon-assets"
+PARTIAL_INFO_PLIST="$ICON_BUILD_DIR/partial-info.plist"
+
 VERBOSE_MODE=0
 DIST_COMMAND="app"
 APP_ICON_STATUS="未执行"
@@ -37,16 +47,16 @@ fatal() {
 usage() {
   cat <<'EOF'
 用法:
-  package-dist.sh [子命令] [选项]
+  build-dist.sh [子命令] [选项]
 
 子命令:
+  icon   编译应用图标，并在存在 dist app 时写入其 Resources
   app    构建 dist/BatteryCap.app
   dmg    构建 dist/BatteryCap.app 并生成 dist/BatteryCap.dmg
   help   显示帮助
   -h     显示帮助
 
 选项:
-  --strict   将可选步骤失败视为错误
   --verbose  输出可选步骤完整日志
 
 默认子命令: app
@@ -96,10 +106,6 @@ run_optional_step() {
     tail -n 20 "$output_file" >&2
   fi
   rm -f "$output_file"
-
-  if [[ "$STRICT_MODE" -eq 1 ]]; then
-    fatal "$step_name 失败（严格模式）"
-  fi
   return 1
 }
 
@@ -157,7 +163,7 @@ parse_args() {
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      app|dmg|help)
+      app|dmg|icon|help)
         if [[ "$command_set" -eq 1 ]]; then
           fatal "只能指定一个子命令。"
         fi
@@ -168,9 +174,6 @@ parse_args() {
         DIST_COMMAND="help"
         command_set=1
         ;;
-      --strict)
-        STRICT_MODE=1
-        ;;
       --verbose)
         VERBOSE_MODE=1
         ;;
@@ -180,6 +183,56 @@ parse_args() {
     esac
     shift
   done
+}
+
+compile_app_icon() {
+  if [[ ! -d "$ICON_SOURCE" ]]; then
+    echo "error: missing icon source: $ICON_SOURCE" >&2
+    return 1
+  fi
+
+  if ! mkdir -p "$ICON_BUILD_DIR"; then
+    return 1
+  fi
+
+  if ! xcrun actool \
+    --compile "$ICON_BUILD_DIR" \
+    --platform macosx \
+    --minimum-deployment-target 26.0 \
+    --target-device mac \
+    --app-icon BatteryCap \
+    --output-partial-info-plist "$PARTIAL_INFO_PLIST" \
+    "$ICON_SOURCE"
+  then
+    return 1
+  fi
+
+  echo "compiled icon assets: $ICON_BUILD_DIR/Assets.car"
+  echo "generated fallback icon: $ICON_BUILD_DIR/BatteryCap.icns"
+
+  if [[ -d "$DIST_RESOURCES_DIR" ]]; then
+    if ! cp "$ICON_BUILD_DIR/Assets.car" "$DIST_RESOURCES_DIR/Assets.car"; then
+      return 1
+    fi
+    if ! cp "$ICON_BUILD_DIR/BatteryCap.icns" "$DIST_RESOURCES_DIR/BatteryCap.icns"; then
+      return 1
+    fi
+
+    if [[ -f "$DIST_INFO_PLIST" ]]; then
+      if /usr/libexec/PlistBuddy -c "Print :CFBundleIconName" "$DIST_INFO_PLIST" >/dev/null 2>&1; then
+        if ! /usr/libexec/PlistBuddy -c "Set :CFBundleIconName BatteryCap" "$DIST_INFO_PLIST"; then
+          return 1
+        fi
+      else
+        if ! /usr/libexec/PlistBuddy -c "Add :CFBundleIconName string BatteryCap" "$DIST_INFO_PLIST"; then
+          return 1
+        fi
+      fi
+    fi
+    echo "updated dist resources: $DIST_RESOURCES_DIR"
+  else
+    echo "note: dist app not found, skipped copy to dist"
+  fi
 }
 
 build_dist_app() {
@@ -222,7 +275,7 @@ build_dist_app() {
   chmod 755 "$RESOURCES_DIR/batterycap-service.sh"
 
   if command -v xcrun >/dev/null 2>&1; then
-    if run_optional_step "编译应用图标" "$ROOT_DIR/scripts/compile-app-icon.sh"; then
+    if run_optional_step "编译应用图标" compile_app_icon; then
       APP_ICON_STATUS="成功"
     else
       APP_ICON_STATUS="失败"
@@ -279,6 +332,12 @@ main() {
     dmg)
       preflight_app
       build_dist_dmg
+      ;;
+    icon)
+      require_command xcrun
+      if ! compile_app_icon; then
+        fatal "编译应用图标失败"
+      fi
       ;;
     help|-h|--help)
       usage

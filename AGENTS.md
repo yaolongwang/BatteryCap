@@ -25,7 +25,7 @@
 脚本入口：
 
 - `scripts/batterycap-service.sh`（开发态入口，转发到 `Sources/BatteryCap/Resources/batterycap-service.sh`）
-- `scripts/package-dist.sh app|dmg`
+- `scripts/build-dist.sh icon|app|dmg`
 
 ## 3) 代码风格与安全
 
@@ -50,8 +50,7 @@
 - `Package.swift`：主包与测试目标配置
 - `scripts/`：开发与分发脚本：
   - `scripts/batterycap-service.sh`：开发态服务入口（转发到资源脚本）
-  - `scripts/compile-app-icon.sh`：编译并写入应用图标资源（.icon文件每次修改后需执行）
-  - `scripts/package-dist.sh`：打包分发产物（`app`、`dmg`）
+  - `scripts/build-dist.sh`：统一构建图标与分发产物（`icon`、`app`、`dmg`）
 - `Sources/BatteryCap/App.swift`：主入口（app/diagnose/maintenance 分流）
 - `Sources/BatteryCap/Core/`：SMC、IOKit、Helper 客户端、诊断
 - `Sources/BatteryCap/Logic/`：策略与状态管理
@@ -68,7 +67,7 @@
 2. `swift build`
 3. `swift test`
 4. 若改动了 shell 脚本：`bash -n <script>`
-5. 若改动了分发脚本：执行对应打包命令（`scripts/package-dist.sh app` 或 `scripts/package-dist.sh dmg`）
+5. 若改动了分发脚本：执行对应打包命令（`scripts/build-dist.sh app` 或 `scripts/build-dist.sh dmg`）
 
 测试约定：
 
