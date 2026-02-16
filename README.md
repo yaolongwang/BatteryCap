@@ -90,3 +90,7 @@ BATTERYCAP_DIAG=1 swift run
 ```bash
 scripts/batterycap-service.sh install
 ```
+
+## 开源协议
+
+本项目采用 Apache License 2.0，详见 [LICENSE](./LICENSE)。
