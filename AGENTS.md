@@ -1,6 +1,6 @@
 # BatteryCap - AGENTS 指南
 
-本文件仅定义 AI 修改仓库时的规则。README 面向用户，不在此重复用户使用说明。
+本文件仅定义 AI 修改仓库时的规则。
 
 ## 1) 文档边界（强制）
 
@@ -25,7 +25,7 @@
 脚本入口：
 
 - `scripts/batterycap-service.sh`（开发态入口，转发到 `Sources/BatteryCap/Resources/batterycap-service.sh`）
-- `scripts/build-dist.sh icon|app|dmg`
+- `scripts/build-dist.sh <icon|app|dmg>`
 
 ## 3) 代码风格与安全
 
