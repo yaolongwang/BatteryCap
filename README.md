@@ -5,12 +5,8 @@
 <h1 align="center">BatteryCap</h1>
 
 <p align="center">
-  <a href="https://github.com/yaolongwang/BatteryCap/releases/latest/download/BatteryCap.dmg">
-    <img src="https://img.shields.io/badge/macOS%20DMG-Latest%20Release-0A84FF?logo=apple&logoColor=white&labelColor=1F2328" alt="Download latest DMG" />
-  </a>
-  <a href="./LICENSE">
-    <img src="https://img.shields.io/badge/License-Apache_2.0-green.svg" alt="License: Apache-2.0" />
-  </a>
+  <a href="https://github.com/yaolongwang/BatteryCap/releases/latest/download/BatteryCap.dmg"><img src="https://img.shields.io/badge/macOS%20DMG-Latest%20Release-0A84FF?logo=apple&logoColor=white&labelColor=1F2328" alt="Download latest DMG" /></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-green.svg" alt="License: Apache-2.0" /></a>
 </p>
 
 **BatteryCap** 是一个轻量级 MacBook 菜单栏电池管理工具，通过“电量锁定 + 充电上限”减少长期满充，延缓电池衰减。
