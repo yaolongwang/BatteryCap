@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ICON_SOURCE="$ROOT_DIR/Sources/BatteryCap/Resources/BatteryCap.icon"
+ICON_SOURCE="$ROOT_DIR/assets/BatteryCap.icon"
 ICON_BUILD_DIR="$ROOT_DIR/.build/icon-assets"
 PARTIAL_INFO_PLIST="$ICON_BUILD_DIR/partial-info.plist"
 DIST_RESOURCES_DIR="$ROOT_DIR/dist/BatteryCap.app/Contents/Resources"
