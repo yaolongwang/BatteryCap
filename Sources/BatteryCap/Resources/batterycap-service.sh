@@ -311,10 +311,21 @@ install_helper_restore_build_owner() {
 }
 
 install_helper_bootstrap_service() {
+  if ! launchctl enable system/"$LAUNCH_LABEL" 2>/dev/null; then
+    warn "enable 服务失败：system/$LAUNCH_LABEL"
+  fi
+
   launchctl bootout system "$PLIST_DEST" 2>/dev/null || true
   local bootstrap_output
   if ! bootstrap_output="$(launchctl bootstrap system "$PLIST_DEST" 2>&1)"; then
-    if launchctl print system/"$LAUNCH_LABEL" >/dev/null 2>&1; then
+    if [[ "$bootstrap_output" == *"Service is disabled"* ]]; then
+      if ! launchctl enable system/"$LAUNCH_LABEL" 2>/dev/null; then
+        warn "enable 服务失败：system/$LAUNCH_LABEL"
+      fi
+      if ! bootstrap_output="$(launchctl bootstrap system "$PLIST_DEST" 2>&1)"; then
+        fatal "bootstrap 失败：$bootstrap_output"
+      fi
+    elif launchctl print system/"$LAUNCH_LABEL" >/dev/null 2>&1; then
       log "bootstrap 返回非零，但服务已加载：$bootstrap_output"
     else
       fatal "bootstrap 失败：$bootstrap_output"
