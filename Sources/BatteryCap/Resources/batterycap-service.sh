@@ -256,9 +256,23 @@ install_helper_validate_inputs() {
 }
 
 install_helper_validate_invocation() {
-  if [[ "$(id -u)" -eq 0 && "$INSTALL_BUNDLE_MODE" -eq 0 && "$INSTALL_ONLY" -ne 1 ]]; then
+  if [[ "$(id -u)" -eq 0 && "$INSTALL_BUNDLE_MODE" -eq 0 && "$INSTALL_ONLY" -ne 1 && "${BATTERYCAP_ALLOW_ROOT_INSTALL:-0}" != "1" ]]; then
     fatal "请在非 root 用户下运行脚本，root 仅用于安装阶段。"
   fi
+}
+
+install_helper_prepare_root_build_dir() {
+  if [[ "$(id -u)" -ne 0 || "$INSTALL_BUNDLE_MODE" -eq 1 || "$INSTALL_ONLY" -eq 1 ]]; then
+    return
+  fi
+  if [[ "${BATTERYCAP_ALLOW_ROOT_INSTALL:-0}" != "1" ]]; then
+    return
+  fi
+
+  local temp_build_dir
+  temp_build_dir="$(mktemp -d /tmp/batterycap-helper-build.XXXXXX)"
+  INSTALL_BUILD_DIR="$temp_build_dir"
+  INSTALL_HELPER_EXEC="$INSTALL_BUILD_DIR/release/BatteryCapHelper"
 }
 
 install_helper_prepare_non_root() {
@@ -350,6 +364,7 @@ install_helper() {
   install_helper_validate_inputs
   install_helper_validate_invocation
   install_helper_prepare_non_root "$@"
+  install_helper_prepare_root_build_dir
   install_helper_build_if_needed
   install_helper_validate_binary
   install_helper_install_files

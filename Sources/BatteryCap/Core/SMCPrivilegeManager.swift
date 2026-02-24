@@ -25,10 +25,11 @@ final class SMCPrivilegeManager {
     task.standardError = stderrPipe
     let quotedPath = shellQuote(scriptURL.path)
     let quotedArguments = arguments.map { shellQuote($0) }.joined(separator: " ")
+    let environmentPrefix = arguments.first == "install" ? "BATTERYCAP_ALLOW_ROOT_INSTALL=1 " : ""
     let command =
       quotedArguments.isEmpty
-      ? "/bin/bash \(quotedPath)"
-      : "/bin/bash \(quotedPath) \(quotedArguments)"
+      ? "\(environmentPrefix)/bin/bash \(quotedPath)"
+      : "\(environmentPrefix)/bin/bash \(quotedPath) \(quotedArguments)"
     let escapedCommand =
       command
       .replacingOccurrences(of: "\\", with: "\\\\")
